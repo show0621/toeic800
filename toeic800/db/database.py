@@ -164,6 +164,15 @@ class ToeicDatabase:
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_articles_track ON articles(track)"
         )
+        vcols = {r[1] for r in conn.execute("PRAGMA table_info(vocabulary)")}
+        for col, ddl in (
+            ("study_status", "ALTER TABLE vocabulary ADD COLUMN study_status TEXT DEFAULT 'auto'"),
+            ("dict_source", "ALTER TABLE vocabulary ADD COLUMN dict_source TEXT"),
+            ("dict_url", "ALTER TABLE vocabulary ADD COLUMN dict_url TEXT"),
+        ):
+            if col not in vcols:
+                conn.execute(ddl)
+                vcols.add(col)
 
     def week_label(self, dt: datetime | None = None) -> str:
         dt = dt or datetime.now()
@@ -261,8 +270,9 @@ class ToeicDatabase:
                     """
                     INSERT INTO vocabulary (
                         article_id, word, pos, meaning_zh, meaning_en, phonetic,
-                        example_en, example_zh, audio_path, sort_order
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        example_en, example_zh, audio_path, sort_order,
+                        study_status, dict_source, dict_url
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         article_id,
@@ -275,6 +285,9 @@ class ToeicDatabase:
                         vocab.get("example_zh"),
                         vocab.get("audio_path"),
                         i,
+                        vocab.get("study_status", "auto"),
+                        vocab.get("dict_source"),
+                        vocab.get("dict_url"),
                     ),
                 )
 
@@ -456,6 +469,81 @@ class ToeicDatabase:
         with self.connect() as conn:
             rows = conn.execute(sql, params).fetchall()
         return [normalize_vocab_row(dict(r)) for r in rows]
+
+    def set_vocab_study_status(self, vocab_id: int, status: str) -> None:
+        status = status if status in ("auto", "included", "excluded") else "auto"
+        with self.connect() as conn:
+            conn.execute(
+                "UPDATE vocabulary SET study_status = ? WHERE id = ?",
+                (status, vocab_id),
+            )
+
+    def update_vocab_entry(self, vocab_id: int, **fields: Any) -> None:
+        allowed = {
+            "word",
+            "pos",
+            "meaning_zh",
+            "meaning_en",
+            "phonetic",
+            "example_en",
+            "example_zh",
+            "audio_path",
+            "study_status",
+            "dict_source",
+            "dict_url",
+        }
+        updates = {k: v for k, v in fields.items() if k in allowed}
+        if not updates:
+            return
+        cols = ", ".join(f"{k} = ?" for k in updates)
+        with self.connect() as conn:
+            conn.execute(
+                f"UPDATE vocabulary SET {cols} WHERE id = ?",
+                (*updates.values(), vocab_id),
+            )
+
+    def article_has_vocab_word(self, article_id: int, word: str) -> bool:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT 1 FROM vocabulary
+                WHERE article_id = ? AND lower(word) = lower(?)
+                """,
+                (article_id, word),
+            ).fetchone()
+        return row is not None
+
+    def add_vocab_entry(self, article_id: int, entry: dict[str, Any]) -> int:
+        with self.connect() as conn:
+            max_order = conn.execute(
+                "SELECT COALESCE(MAX(sort_order), -1) FROM vocabulary WHERE article_id = ?",
+                (article_id,),
+            ).fetchone()[0]
+            cur = conn.execute(
+                """
+                INSERT INTO vocabulary (
+                    article_id, word, pos, meaning_zh, meaning_en, phonetic,
+                    example_en, example_zh, audio_path, sort_order, study_status,
+                    dict_source, dict_url
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    article_id,
+                    entry["word"],
+                    entry.get("pos"),
+                    entry.get("meaning_zh"),
+                    entry.get("meaning_en"),
+                    entry.get("phonetic"),
+                    entry.get("example_en"),
+                    entry.get("example_zh"),
+                    entry.get("audio_path"),
+                    int(max_order) + 1,
+                    entry.get("study_status", "included"),
+                    entry.get("dict_source"),
+                    entry.get("dict_url"),
+                ),
+            )
+            return int(cur.lastrowid)
 
     def add_note(
         self,

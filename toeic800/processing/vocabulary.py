@@ -9,6 +9,7 @@ from typing import Any
 import requests
 
 from toeic800 import config
+from toeic800.processing.cambridge_dict import lookup_cambridge
 from toeic800.processing.translator import translate_text
 from toeic800.processing.vocab_examples import enrich_vocab_example, generate_example_sentence, generate_example_zh
 from toeic800.processing.vocab_glossary import apply_glossary
@@ -51,8 +52,12 @@ def extract_vocabulary(
         info = lookup_word(word)
         if not info:
             continue
-        example = generate_example_sentence(word, info.get("pos"))
-        example_zh = generate_example_zh(word) or translate_text(example)
+        if info.get("dict_source") == "cambridge":
+            example = info.get("example_en") or ""
+            example_zh = info.get("example_zh") or ""
+        else:
+            example = generate_example_sentence(word, info.get("pos"))
+            example_zh = generate_example_zh(word) or translate_text(example)
         entry = enrich_vocab_example(
             {
                 "word": word,
@@ -63,6 +68,8 @@ def extract_vocabulary(
                 "example_en": example,
                 "example_zh": example_zh,
                 "audio_path": info.get("audio_path"),
+                "dict_source": info.get("dict_source"),
+                "dict_url": info.get("dict_url"),
             }
         )
         results.append(entry)
@@ -93,6 +100,19 @@ def _example_sentence(word: str, paragraphs: list[str]) -> str:
 
 
 def lookup_word(word: str) -> dict[str, Any] | None:
+    """優先 Cambridge Dictionary（繁中）；失敗時備援 Free Dictionary API。"""
+    cambridge = lookup_cambridge(word)
+    if cambridge:
+        info = apply_glossary(word, cambridge)
+        if not info.get("meaning_zh") and info.get("meaning_en"):
+            info["meaning_zh"] = translate_text(info["meaning_en"])
+        if info.get("example_en") and not info.get("example_zh"):
+            info["example_zh"] = translate_text(info["example_en"])
+        return info
+    return _lookup_free_dictionary(word)
+
+
+def _lookup_free_dictionary(word: str) -> dict[str, Any] | None:
     try:
         resp = requests.get(
             f"https://api.dictionaryapi.dev/api/v2/entries/en/{word.lower()}",
@@ -125,6 +145,8 @@ def lookup_word(word: str) -> dict[str, Any] | None:
             "meaning_en": meaning_en,
             "meaning_zh": "",
             "audio_path": audio_path,
+            "dict_source": "free",
+            "dict_url": "",
         },
     )
     if not info.get("meaning_zh") and info.get("meaning_en"):
@@ -182,6 +204,24 @@ def _cache_audio(word: str, url: str) -> str | None:
     except Exception as exc:
         logger.debug("音檔快取失敗 %s: %s", word, exc)
     return None
+
+
+def vocab_dict_fields(info: dict[str, Any]) -> dict[str, Any]:
+    """將 lookup 結果轉成可寫入 DB 的欄位。"""
+    return {
+        k: info[k]
+        for k in (
+            "pos",
+            "meaning_zh",
+            "meaning_en",
+            "phonetic",
+            "example_en",
+            "example_zh",
+            "dict_source",
+            "dict_url",
+        )
+        if info.get(k) not in (None, "")
+    }
 
 
 def ensure_pronunciation(word: str, accent: str = "US") -> str | None:

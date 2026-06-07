@@ -429,8 +429,11 @@ def _verb_form(word: str) -> str:
 
 
 def enrich_vocab_example(v: dict[str, Any]) -> dict[str, Any]:
-    """確保單字條目使用原創例句與考場級釋義（覆蓋舊有新聞摘句）。"""
+    """確保單字條目有例句；Cambridge 引用資料不覆寫。"""
     from toeic800.processing.vocab_glossary import apply_glossary
+
+    if (v.get("dict_source") or "").lower() == "cambridge":
+        return apply_glossary(v.get("word") or "", dict(v))
 
     word = v.get("word") or ""
     if not word:

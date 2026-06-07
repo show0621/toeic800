@@ -10,9 +10,8 @@ import streamlit as st
 
 from toeic800.processing.japanese_vocabulary import ensure_ja_pronunciation
 from toeic800.processing.tts import ACCENT_LABELS, ensure_tts
-from toeic800.processing.vocab_examples import enrich_vocab_example
-from toeic800.processing.vocabulary import ensure_pronunciation
-from toeic800.processing.word_levels import filter_advanced_vocab_map
+from toeic800.ui.vocab_attribution import render_dict_attribution
+from toeic800.processing.vocab_selection import filter_active_vocabulary
 
 
 def build_vocab_map(vocabulary: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
@@ -31,16 +30,17 @@ def build_ja_vocab_map(vocabulary: list[dict[str, Any]]) -> dict[str, dict[str, 
 
 def build_highlight_vocab_map(
     vocabulary: list[dict[str, Any]],
+    *,
+    toeic: bool = True,
 ) -> dict[str, dict[str, Any]]:
-    """僅保留多益 800–900 進階生字供黃標。"""
-    mapped = build_vocab_map(vocabulary)
-    # 英文 key 用小寫
+    """依學習範圍設定（納入／不納入／自動）決定黃標單字。"""
+    active = filter_active_vocabulary(vocabulary, toeic=toeic)
     en_map: dict[str, dict[str, Any]] = {}
-    for v in vocabulary:
+    for v in active:
         key = v["word"].lower()
         if key not in en_map:
             en_map[key] = v
-    return filter_advanced_vocab_map(en_map)
+    return en_map
 
 
 def words_in_text(text: str, vocab_map: dict[str, dict[str, Any]]) -> list[str]:
@@ -103,38 +103,76 @@ def highlight_ja_html(text: str, vocab_map: dict[str, dict[str, Any]]) -> str:
 
 
 def render_vocab_popover(
-    v: dict[str, Any], *, key_prefix: str, accent: str = "US", japanese: bool = False
+    v: dict[str, Any],
+    *,
+    key_prefix: str,
+    accent: str = "US",
+    japanese: bool = False,
+    on_demand: bool = True,
 ) -> None:
-    """在 popover 內顯示單字詳情。"""
-    if not japanese:
-        v = enrich_vocab_example(v)
+    """在 popover 內顯示單字詳情（預設按需產生語音／例句）。"""
     st.markdown(f"**{v['word']}** · {v.get('pos') or ''}")
     st.caption(v.get("phonetic") or v.get("meaning_en") or "")
     st.write("**中文：**", v.get("meaning_zh") or "—")
     if not japanese:
         st.write("**英文：**", v.get("meaning_en") or "—")
+    render_dict_attribution(v)
+
+    vid = v.get("id")
+    lang = "ja" if japanese else "en"
+
     if v.get("example_en"):
         st.write("**例句（原創）：**", v["example_en"])
         st.caption(v.get("example_zh") or "")
-        lang = "ja" if japanese else "en"
-        ex_audio = ensure_tts(v["example_en"], lang=lang, accent=accent if not japanese else "US")
-        if ex_audio and Path(ex_audio).exists():
-            st.caption("例句朗讀 · Neural 真人感語音")
-            st.audio(ex_audio)
-    audio = v.get("audio_path")
-    if japanese:
-        if not audio or not Path(str(audio)).exists():
-            audio = ensure_ja_pronunciation(v["word"])
-    else:
-        if not audio or not Path(str(audio)).exists():
-            audio = ensure_pronunciation(v["word"], accent=accent)
+        if on_demand:
+            if st.button("🔊 例句朗讀", key=f"{key_prefix}_ex_tts"):
+                with st.spinner("…"):
+                    ex_audio = ensure_tts(
+                        v["example_en"], lang=lang, accent=accent if not japanese else "US"
+                    )
+                if ex_audio and Path(ex_audio).exists():
+                    st.audio(ex_audio)
         else:
-            # 單字發音一律用 Neural TTS，口音可選
-            audio = ensure_pronunciation(v["word"], accent=accent) or audio
+            ex_audio = ensure_tts(v["example_en"], lang=lang, accent=accent if not japanese else "US")
+            if ex_audio and Path(ex_audio).exists():
+                st.caption("例句朗讀")
+                st.audio(ex_audio)
+    elif on_demand and vid and st.button("📖 查 Cambridge", key=f"{key_prefix}_cam"):
+        from toeic800.processing.vocabulary import lookup_word
+
+        info = lookup_word(v["word"])
+        if info:
+            st.write("**英文：**", info.get("meaning_en") or "—")
+            st.write("**中文：**", info.get("meaning_zh") or "—")
+            if info.get("example_en"):
+                st.write("**例句：**", info["example_en"])
+                st.caption(info.get("example_zh") or "")
+            render_dict_attribution(info)
+        else:
+            st.warning("Cambridge 查無此詞")
+
+    audio = v.get("audio_path")
     if audio and Path(str(audio)).exists():
         label = "日語發音" if japanese else f"單字發音 · {ACCENT_LABELS.get(accent, accent)}"
         st.caption(label)
         st.audio(audio)
+    elif on_demand:
+        if st.button(
+            "🔊 產生語音" if not japanese else "🔊 產生日語發音",
+            key=f"{key_prefix}_gen_tts",
+        ):
+            with st.spinner("…"):
+                if japanese:
+                    audio = ensure_ja_pronunciation(v["word"])
+                else:
+                    audio = ensure_pronunciation(v["word"], accent=accent)
+            if audio and Path(str(audio)).exists():
+                st.audio(audio)
+    elif not japanese:
+        audio = ensure_pronunciation(v["word"], accent=accent)
+        if audio and Path(str(audio)).exists():
+            st.caption(f"單字發音 · {ACCENT_LABELS.get(accent, accent)}")
+            st.audio(audio)
 
 
 def render_article_vocab_chips(

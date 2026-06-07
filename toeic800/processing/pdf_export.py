@@ -106,7 +106,8 @@ def _build_toeic_pdf(
     pdf.multi_cell(
         0,
         5,
-        "例句為原創練習用語，非新聞原文。TOEIC® 為 ETS 註冊商標；本表與 ETS／IIBC 無關。",
+        "釋義／例句引用 Cambridge Dictionary（© Cambridge University Press），"
+        "僅摘錄一義一例供個人學習；TOEIC® 為 ETS 註冊商標，本表與 ETS／IIBC 無關。",
     )
     pdf.ln(6)
 

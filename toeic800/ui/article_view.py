@@ -9,9 +9,9 @@ from toeic800.db.database import ToeicDatabase
 from toeic800.processing.tts import ACCENT_LABELS, ACCENT_VOICES, ensure_tts
 from toeic800.ui.context import is_japanese, jlpt_level, learning_track
 from toeic800.ui.disclaimer import render_disclaimer
+from toeic800.ui.vocab_curation import render_article_vocab_curation
 from toeic800.ui.vocab_interactive import (
     build_highlight_vocab_map,
-    build_ja_vocab_map,
     highlight_html,
     highlight_ja_html,
     render_article_vocab_chips,
@@ -72,9 +72,21 @@ def render_article_page(db: ToeicDatabase) -> None:
 
     paragraphs = article.get("paragraphs") or []
     if toeic:
-        highlight_map = build_highlight_vocab_map(article.get("vocabulary") or [])
+        highlight_map = build_highlight_vocab_map(
+            article.get("vocabulary") or [], toeic=True
+        )
     else:
-        highlight_map = build_ja_vocab_map(article.get("vocabulary") or [])
+        highlight_map = build_highlight_vocab_map(
+            article.get("vocabulary") or [], toeic=False
+        )
+
+    render_article_vocab_curation(
+        db,
+        article,
+        accent=accent,
+        toeic=toeic,
+        japanese=not toeic,
+    )
 
     tts_lang = "ja" if is_japanese() else "en"
     _render_reading_audio(paragraphs, article, lang=tts_lang, accent=accent)
@@ -110,7 +122,8 @@ def render_article_page(db: ToeicDatabase) -> None:
         st.markdown("#### 📖 閱讀")
         if highlight_map:
             st.caption(
-                "黃色標示為多益 800–900 進階生字（常見詞不標；全篇每詞僅首次出現標示）· 文末可點選查看釋義"
+                "黃色標示為已納入學習的進階生字（全篇每詞僅首次標示）· "
+                "可在上方「單字管理」自由納入／不納入"
             )
     else:
         st.markdown("#### 📖 日中對照")

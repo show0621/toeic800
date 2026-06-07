@@ -88,3 +88,12 @@ TOPIC_KEYWORDS = (
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 TRANSLATOR = os.getenv("TRANSLATOR", "google")  # google | openai
+
+# Cambridge Dictionary（繁中）— 單字釋義／例句引用
+CAMBRIDGE_DICT_ENABLED = os.getenv("CAMBRIDGE_DICT_ENABLED", "true").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+CAMBRIDGE_REQUEST_GAP_SEC = float(os.getenv("CAMBRIDGE_REQUEST_GAP_SEC", "1.2"))
+CAMBRIDGE_REQUEST_TIMEOUT = int(os.getenv("CAMBRIDGE_REQUEST_TIMEOUT", "15"))
