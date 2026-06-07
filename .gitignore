@@ -4,5 +4,7 @@ __pycache__/
 *.pyc
 data/toeic800.db
 data/audio/*.mp3
+data/audio/**/*.mp3
+data/audio_ja/*.mp3
 .streamlit/secrets.toml
 .cursor/hooks/auto-sync.log

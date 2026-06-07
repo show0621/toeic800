@@ -19,6 +19,10 @@ def inject_theme() -> None:
         .sub-line-en { font-weight: 500; color: #0f172a; }
         .sub-line-zh { color: #64748b; font-size: 0.92rem; margin-top: 0.15rem; }
         .hero-sub { color: #64748b; max-width: 52rem; line-height: 1.7; }
+        mark.vocab-hl, .vocab-hl {
+            background: #fef3c7; color: #0f3d5c; padding: 0 0.2em;
+            border-radius: 3px; font-weight: 600; cursor: help;
+        }
         </style>
         """,
         unsafe_allow_html=True,

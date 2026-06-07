@@ -1,15 +1,30 @@
-# 多益800分 · 經濟英文週報
+# 多益800分 · 經濟英文 + 日文 JLPT 週報
 
-每週從 **BBC**、**CNN** 抓取經濟、股市、國際情勢報導，整理成中英對照閱讀、多益800級單字表（詞性、中文、英文解釋、例句、發音），並支援影片中英字幕、複習與筆記。
+同一網站、側欄切換 **多益800** 與 **日文 N5–N1**。
 
-## 功能
+## 日文模組（N5–N1）
 
-- RSS 探索 BBC Business / World、CNN Money / World
-- 正文擷取 + 段落級中英翻譯
-- 多益800導向單字抽取（Free Dictionary API + 發音音檔）
-- 影片嵌入與中英字幕（原生 transcript 或正文分段）
-- SQLite 儲存：文章、單字、字幕、筆記、複習紀錄
-- Streamlit 網站：閱讀、單字表、翻卡複習、筆記
+每週各級各抓取 1 篇，來源分級參考 [免費日文新聞資源推薦](https://vocus.cc/article/6837b674fd8978000142bdb4)：
+
+| 等級 | 來源 |
+|------|------|
+| N5 | NHKやさしいことばニュース |
+| N4 | 毎日小学生新聞 |
+| N3 | Yahoo!ニュース |
+| N2 | NHKニュース |
+| N1 | 朝日新聞·社説 |
+
+功能：日中對照、單字（詞性/讀音/例句/發音）、文法、聽力、小考、單字 PDF、複習、筆記。
+
+```bash
+python main.py fetch-weekly-japanese   # N5–N1 各 1 篇
+python main.py fetch-weekly-all          # 多益 + 日文
+python main.py import-japanese --url "https://www3.nhk.or.jp/news/easy/..." --level N5
+```
+
+## 多益模組
+
+每週 BBC / CNN 經濟、股市、國際新聞（見下方快速開始）。
 
 ## 快速開始
 

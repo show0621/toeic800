@@ -6,12 +6,15 @@ from pathlib import Path
 import streamlit as st
 
 from toeic800.db.database import ToeicDatabase
+from toeic800.ui.context import is_japanese, jlpt_level, learning_track
 
 
 def render_review_page(db: ToeicDatabase) -> None:
+    track = learning_track()
+    level = jlpt_level() if is_japanese() else None
     st.markdown("### 單字複習")
     limit = st.slider("本輪題數", 5, 30, 15)
-    queue = db.review_queue(limit=limit)
+    queue = db.review_queue(limit=limit, track=track, jlpt_level=level)
     if not queue:
         st.info("尚無單字可複習")
         return
@@ -36,7 +39,8 @@ def render_review_page(db: ToeicDatabase) -> None:
     else:
         st.markdown(f"*{card.get('phonetic') or ''}* · {card.get('pos') or ''}")
         st.write("**中文：**", card.get("meaning_zh") or "—")
-        st.write("**英文：**", card.get("meaning_en") or "—")
+        label2 = "讀音" if is_japanese() else "英文"
+        st.write(f"**{label2}：**", card.get("meaning_en") or "—")
         if card.get("example_en"):
             st.write("**例句：**", card["example_en"])
             st.caption(card.get("example_zh") or "")

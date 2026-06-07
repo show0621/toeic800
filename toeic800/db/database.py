@@ -82,6 +82,29 @@ CREATE TABLE IF NOT EXISTS review_log (
     FOREIGN KEY (vocab_id) REFERENCES vocabulary(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS grammar_points (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    article_id INTEGER NOT NULL,
+    pattern TEXT NOT NULL,
+    meaning_zh TEXT,
+    example_ja TEXT,
+    example_zh TEXT,
+    jlpt_level TEXT,
+    sort_order INTEGER DEFAULT 0,
+    FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS quiz_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    article_id INTEGER NOT NULL,
+    question TEXT NOT NULL,
+    options_json TEXT NOT NULL,
+    answer TEXT NOT NULL,
+    qtype TEXT DEFAULT 'vocab',
+    sort_order INTEGER DEFAULT 0,
+    FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE
+);
+
 CREATE INDEX IF NOT EXISTS idx_articles_week ON articles(week_label);
 CREATE INDEX IF NOT EXISTS idx_vocab_article ON vocabulary(article_id);
 CREATE INDEX IF NOT EXISTS idx_notes_article ON user_notes(article_id);
@@ -111,6 +134,21 @@ class ToeicDatabase:
     def _init_schema(self) -> None:
         with self.connect() as conn:
             conn.executescript(SCHEMA_SQL)
+            self._migrate(conn)
+
+    def _migrate(self, conn: sqlite3.Connection) -> None:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(articles)")}
+        if "track" not in cols:
+            conn.execute(
+                "ALTER TABLE articles ADD COLUMN track TEXT DEFAULT 'toeic'"
+            )
+        if "jlpt_level" not in cols:
+            conn.execute("ALTER TABLE articles ADD COLUMN jlpt_level TEXT")
+        if "audio_url" not in cols:
+            conn.execute("ALTER TABLE articles ADD COLUMN audio_url TEXT")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_articles_track ON articles(track)"
+        )
 
     def week_label(self, dt: datetime | None = None) -> str:
         dt = dt or datetime.now()
@@ -124,6 +162,18 @@ class ToeicDatabase:
             ).fetchone()
         return row is not None
 
+    def has_weekly_article(
+        self, track: str, week_label: str, jlpt_level: str | None = None
+    ) -> bool:
+        sql = "SELECT 1 FROM articles WHERE track = ? AND week_label = ?"
+        params: list[Any] = [track, week_label]
+        if jlpt_level:
+            sql += " AND jlpt_level = ?"
+            params.append(jlpt_level)
+        with self.connect() as conn:
+            row = conn.execute(sql, params).fetchone()
+        return row is not None
+
     def save_article_bundle(self, bundle: dict[str, Any]) -> int:
         with self.connect() as conn:
             cur = conn.execute(
@@ -131,8 +181,8 @@ class ToeicDatabase:
                 INSERT INTO articles (
                     source, url, title, title_zh, summary_en, summary_zh,
                     week_label, published_at, has_video, video_url,
-                    video_embed_html, thumbnail_url
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    video_embed_html, thumbnail_url, track, jlpt_level, audio_url
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(url) DO UPDATE SET
                     title=excluded.title,
                     title_zh=excluded.title_zh,
@@ -142,7 +192,10 @@ class ToeicDatabase:
                     has_video=excluded.has_video,
                     video_url=excluded.video_url,
                     video_embed_html=excluded.video_embed_html,
-                    thumbnail_url=excluded.thumbnail_url
+                    thumbnail_url=excluded.thumbnail_url,
+                    track=excluded.track,
+                    jlpt_level=excluded.jlpt_level,
+                    audio_url=excluded.audio_url
                 """,
                 (
                     bundle["source"],
@@ -157,6 +210,9 @@ class ToeicDatabase:
                     bundle.get("video_url"),
                     bundle.get("video_embed_html"),
                     bundle.get("thumbnail_url"),
+                    bundle.get("track", "toeic"),
+                    bundle.get("jlpt_level"),
+                    bundle.get("audio_url"),
                 ),
             )
             article_id = cur.lastrowid
@@ -165,9 +221,16 @@ class ToeicDatabase:
                     "SELECT id FROM articles WHERE url = ?", (bundle["url"],)
                 ).fetchone()
                 article_id = int(row["id"])
-                conn.execute("DELETE FROM paragraphs WHERE article_id = ?", (article_id,))
-                conn.execute("DELETE FROM vocabulary WHERE article_id = ?", (article_id,))
-                conn.execute("DELETE FROM subtitles WHERE article_id = ?", (article_id,))
+                for tbl in (
+                    "paragraphs",
+                    "vocabulary",
+                    "subtitles",
+                    "grammar_points",
+                    "quiz_items",
+                ):
+                    conn.execute(
+                        f"DELETE FROM {tbl} WHERE article_id = ?", (article_id,)
+                    )
 
             for i, para in enumerate(bundle.get("paragraphs", [])):
                 conn.execute(
@@ -216,17 +279,66 @@ class ToeicDatabase:
                         i,
                     ),
                 )
+
+            for i, gp in enumerate(bundle.get("grammar", [])):
+                conn.execute(
+                    """
+                    INSERT INTO grammar_points (
+                        article_id, pattern, meaning_zh, example_ja, example_zh,
+                        jlpt_level, sort_order
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        article_id,
+                        gp["pattern"],
+                        gp.get("meaning_zh"),
+                        gp.get("example_ja"),
+                        gp.get("example_zh"),
+                        gp.get("jlpt_level"),
+                        i,
+                    ),
+                )
+
+            for i, q in enumerate(bundle.get("quiz", [])):
+                conn.execute(
+                    """
+                    INSERT INTO quiz_items (
+                        article_id, question, options_json, answer, qtype, sort_order
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        article_id,
+                        q["question"],
+                        q["options_json"],
+                        q["answer"],
+                        q.get("qtype", "vocab"),
+                        i,
+                    ),
+                )
         return int(article_id)
 
-    def list_weeks(self) -> list[str]:
+    def list_weeks(
+        self, track: str | None = None, jlpt_level: str | None = None
+    ) -> list[str]:
+        sql = "SELECT DISTINCT week_label FROM articles WHERE 1=1"
+        params: list[Any] = []
+        if track:
+            sql += " AND track = ?"
+            params.append(track)
+        if jlpt_level:
+            sql += " AND jlpt_level = ?"
+            params.append(jlpt_level)
+        sql += " ORDER BY week_label DESC"
         with self.connect() as conn:
-            rows = conn.execute(
-                "SELECT DISTINCT week_label FROM articles ORDER BY week_label DESC"
-            ).fetchall()
+            rows = conn.execute(sql, params).fetchall()
         return [r["week_label"] for r in rows]
 
     def list_articles(
-        self, week_label: str | None = None, source: str | None = None
+        self,
+        week_label: str | None = None,
+        source: str | None = None,
+        track: str | None = None,
+        jlpt_level: str | None = None,
     ) -> list[dict[str, Any]]:
         sql = "SELECT * FROM articles WHERE 1=1"
         params: list[Any] = []
@@ -236,6 +348,12 @@ class ToeicDatabase:
         if source:
             sql += " AND source LIKE ?"
             params.append(f"%{source}%")
+        if track:
+            sql += " AND track = ?"
+            params.append(track)
+        if jlpt_level:
+            sql += " AND jlpt_level = ?"
+            params.append(jlpt_level)
         sql += " ORDER BY published_at DESC, id DESC"
         with self.connect() as conn:
             rows = conn.execute(sql, params).fetchall()
@@ -270,13 +388,32 @@ class ToeicDatabase:
                     (article_id,),
                 ).fetchall()
             ]
+            article["grammar"] = [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT * FROM grammar_points WHERE article_id = ? ORDER BY sort_order",
+                    (article_id,),
+                ).fetchall()
+            ]
+            article["quiz"] = [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT * FROM quiz_items WHERE article_id = ? ORDER BY sort_order",
+                    (article_id,),
+                ).fetchall()
+            ]
         return article
 
     def list_all_vocabulary(
-        self, week_label: str | None = None, article_id: int | None = None
+        self,
+        week_label: str | None = None,
+        article_id: int | None = None,
+        track: str | None = None,
+        jlpt_level: str | None = None,
     ) -> list[dict[str, Any]]:
         sql = """
-            SELECT v.*, a.title AS article_title, a.week_label, a.source
+            SELECT v.*, a.title AS article_title, a.week_label, a.source,
+                   a.jlpt_level, a.track
             FROM vocabulary v
             JOIN articles a ON a.id = v.article_id
             WHERE 1=1
@@ -288,6 +425,12 @@ class ToeicDatabase:
         if article_id:
             sql += " AND v.article_id = ?"
             params.append(article_id)
+        if track:
+            sql += " AND a.track = ?"
+            params.append(track)
+        if jlpt_level:
+            sql += " AND a.jlpt_level = ?"
+            params.append(jlpt_level)
         sql += " ORDER BY a.week_label DESC, v.sort_order"
         with self.connect() as conn:
             rows = conn.execute(sql, params).fetchall()
@@ -364,33 +507,62 @@ class ToeicDatabase:
             ).fetchone()
         return int(row["mastery"]) if row else 0
 
-    def review_queue(self, limit: int = 20) -> list[dict[str, Any]]:
+    def review_queue(
+        self, limit: int = 20, track: str | None = None, jlpt_level: str | None = None
+    ) -> list[dict[str, Any]]:
         """優先複習尚未評分或掌握度較低的單字。"""
+        sql = """
+            SELECT v.*, a.title AS article_title, a.week_label, a.jlpt_level,
+                   COALESCE(
+                       (SELECT mastery FROM review_log rl
+                        WHERE rl.vocab_id = v.id
+                        ORDER BY rl.reviewed_at DESC LIMIT 1),
+                       -1
+                   ) AS last_mastery
+            FROM vocabulary v
+            JOIN articles a ON a.id = v.article_id
+            WHERE 1=1
+        """
+        params: list[Any] = []
+        if track:
+            sql += " AND a.track = ?"
+            params.append(track)
+        if jlpt_level:
+            sql += " AND a.jlpt_level = ?"
+            params.append(jlpt_level)
+        sql += " ORDER BY last_mastery ASC, a.week_label DESC, v.sort_order LIMIT ?"
+        params.append(limit)
         with self.connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT v.*, a.title AS article_title, a.week_label,
-                       COALESCE(
-                           (SELECT mastery FROM review_log rl
-                            WHERE rl.vocab_id = v.id
-                            ORDER BY rl.reviewed_at DESC LIMIT 1),
-                           -1
-                       ) AS last_mastery
-                FROM vocabulary v
-                JOIN articles a ON a.id = v.article_id
-                ORDER BY last_mastery ASC, a.week_label DESC, v.sort_order
-                LIMIT ?
-                """,
-                (limit,),
-            ).fetchall()
+            rows = conn.execute(sql, params).fetchall()
         return [dict(r) for r in rows]
 
-    def stats(self) -> dict[str, int]:
+    def stats(
+        self, track: str | None = None, jlpt_level: str | None = None
+    ) -> dict[str, int]:
+        af = ""
+        params: list[Any] = []
+        if track:
+            af += " AND a.track = ?"
+            params.append(track)
+        if jlpt_level:
+            af += " AND a.jlpt_level = ?"
+            params.append(jlpt_level)
+        bf = af.replace("a.track", "track").replace("a.jlpt_level", "jlpt_level")
         with self.connect() as conn:
-            articles = conn.execute("SELECT COUNT(*) c FROM articles").fetchone()["c"]
-            vocab = conn.execute("SELECT COUNT(*) c FROM vocabulary").fetchone()["c"]
+            articles = conn.execute(
+                f"SELECT COUNT(*) c FROM articles WHERE 1=1{bf}", params
+            ).fetchone()["c"]
+            vocab = conn.execute(
+                f"""
+                SELECT COUNT(*) c FROM vocabulary v
+                JOIN articles a ON a.id = v.article_id
+                WHERE 1=1{af}
+                """,
+                params,
+            ).fetchone()["c"]
             notes = conn.execute("SELECT COUNT(*) c FROM user_notes").fetchone()["c"]
             weeks = conn.execute(
-                "SELECT COUNT(DISTINCT week_label) c FROM articles"
+                f"SELECT COUNT(DISTINCT week_label) c FROM articles WHERE 1=1{bf}",
+                params,
             ).fetchone()["c"]
         return {"articles": articles, "vocabulary": vocab, "notes": notes, "weeks": weeks}
