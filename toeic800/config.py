@@ -55,6 +55,10 @@ JLPT_SOURCES = {
 WEEKLY_ARTICLE_LIMIT = int(os.getenv("WEEKLY_ARTICLE_LIMIT", "6"))
 VOCAB_PER_ARTICLE = int(os.getenv("VOCAB_PER_ARTICLE", "15"))
 
+# 多益 800+ 每日擬真練習
+DAILY_PRACTICE_COUNT = int(os.getenv("DAILY_PRACTICE_COUNT", "20"))
+DAILY_READING_SPLIT = {"single": 8, "double": 7, "triple": 5}
+
 # RSS 來源
 RSS_FEEDS = {
     "bbc_business": "https://feeds.bbci.co.uk/news/business/rss.xml",

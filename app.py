@@ -30,6 +30,7 @@ from toeic800.ui.kana_pages import render_kana_page
 from toeic800.ui.notes import render_notes_page
 from toeic800.ui.review import render_review_page
 from toeic800.ui.theme import hero, inject_theme
+from toeic800.ui.toeic_practice_pages import render_daily_practice_page
 from toeic800.ui.vocabulary_view import render_vocabulary_page
 
 st.set_page_config(
@@ -85,7 +86,7 @@ def main() -> None:
                 "管理",
             ]
         else:
-            pages = ["首頁", "文章閱讀", "單字表", "複習", "我的筆記", "管理"]
+            pages = ["首頁", "每日練習", "文章閱讀", "單字表", "複習", "我的筆記", "管理"]
 
         if st.session_state.get("nav_page") not in pages:
             st.session_state["nav_page"] = pages[0]
@@ -102,11 +103,13 @@ def main() -> None:
         hero(
             "多益800分 · 經濟英文週報",
             "每週精選 BBC 與 CNN 財經／國際報導，中英對照閱讀、多益級單字整理、"
-            "發音與例句，並支援影片中英字幕、複習與筆記。",
+            "發音與例句，並提供 800–900 分擬真每日練習（聽力、文法、單字、閱讀）。",
         )
 
     if page == "首頁":
         render_home(db)
+    elif page == "每日練習":
+        render_daily_practice_page(db)
     elif page == "文章閱讀":
         render_article_page(db)
     elif page == "單字表":
