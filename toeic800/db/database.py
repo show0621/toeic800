@@ -442,6 +442,8 @@ class ToeicDatabase:
         with self.connect() as conn:
             rows = conn.execute(sql, params).fetchall()
         return [normalize_vocab_row(dict(r)) for r in rows]
+
+    def add_note(
         self,
         note_text: str,
         article_id: int | None = None,

@@ -10,8 +10,9 @@ from toeic800.processing.tts import ACCENT_LABELS, ACCENT_VOICES, ensure_tts
 from toeic800.ui.context import is_japanese, jlpt_level, learning_track
 from toeic800.ui.vocab_interactive import (
     build_highlight_vocab_map,
-    build_vocab_map,
+    build_ja_vocab_map,
     highlight_html,
+    highlight_ja_html,
     render_paragraph_vocab_chips,
 )
 
@@ -72,7 +73,7 @@ def render_article_page(db: ToeicDatabase) -> None:
     if toeic:
         highlight_map = build_highlight_vocab_map(article.get("vocabulary") or [])
     else:
-        highlight_map = build_vocab_map(article.get("vocabulary") or [])
+        highlight_map = build_ja_vocab_map(article.get("vocabulary") or [])
 
     tts_lang = "ja" if is_japanese() else "en"
     _render_reading_audio(paragraphs, article, lang=tts_lang, accent=accent)
@@ -110,12 +111,17 @@ def render_article_page(db: ToeicDatabase) -> None:
             st.caption("黃色標示為多益700+ / 托福雅思級生字 · 點下方按鈕查看釋義")
     else:
         st.markdown("#### 📖 日中對照")
+        if highlight_map:
+            st.caption(
+                f"黃色標示為 {article.get('jlpt_level', 'JLPT')} 本課單字 · 點下方按鈕查看釋義與發音"
+            )
 
     for i, para in enumerate(paragraphs):
         en = para["text_en"]
-        if toeic and highlight_map:
+        if highlight_map:
+            hl = highlight_html(en, highlight_map) if toeic else highlight_ja_html(en, highlight_map)
             st.markdown(
-                f'<div class="en-block">{highlight_html(en, highlight_map)}</div>',
+                f'<div class="en-block">{hl}</div>',
                 unsafe_allow_html=True,
             )
             render_paragraph_vocab_chips(
@@ -123,6 +129,7 @@ def render_article_page(db: ToeicDatabase) -> None:
                 highlight_map,
                 key_prefix=f"art{article['id']}_p{i}",
                 accent=accent,
+                japanese=not toeic,
             )
         else:
             st.markdown(f'<div class="en-block">{en}</div>', unsafe_allow_html=True)

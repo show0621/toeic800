@@ -26,6 +26,7 @@ from toeic800.ui.japanese_pages import (
     render_pdf_page,
     render_quiz_page,
 )
+from toeic800.ui.kana_pages import render_kana_page
 from toeic800.ui.notes import render_notes_page
 from toeic800.ui.review import render_review_page
 from toeic800.ui.theme import hero, inject_theme
@@ -74,6 +75,7 @@ def main() -> None:
                 "首頁",
                 "文章閱讀",
                 "單字表",
+                "50音學習",
                 "文法",
                 "聽力",
                 "小考",
@@ -109,6 +111,8 @@ def main() -> None:
         render_article_page(db)
     elif page == "單字表":
         render_vocabulary_page(db)
+    elif page == "50音學習":
+        render_kana_page()
     elif page == "文法":
         render_grammar_page(db)
     elif page == "聽力":
