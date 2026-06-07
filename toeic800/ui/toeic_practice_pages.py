@@ -8,7 +8,7 @@ from pathlib import Path
 import streamlit as st
 
 from toeic800.db.database import ToeicDatabase
-from toeic800.processing.toeic_practice import DAILY_COUNT, build_daily_set
+from toeic800.processing.toeic_practice import DAILY_COUNT, build_daily_set, corpus_stats
 from toeic800.processing.tts import (
     ACCENT_LABELS,
     dialogue_voice_summary,
@@ -23,7 +23,7 @@ def render_daily_practice_page(db: ToeicDatabase) -> None:
     st.markdown("### 每日擬真練習 · 800–900 分")
     st.caption(
         f"📅 {today.isoformat()} · 聽力 / 文法 / 單字 / 閱讀 各 {DAILY_COUNT} 題 · "
-        "題庫仿多益 Part 5–7 實戰格式 · 可點「查看答案與解析」"
+        "TOEIC 800–900 RAG 原創擬真題庫（Part 5–7 · 非新聞）· 可點「查看答案與解析」"
     )
 
     accent_options = ["US", "UK", "AU", "IN", "MIX"]
@@ -38,6 +38,11 @@ def render_daily_practice_page(db: ToeicDatabase) -> None:
 
     tab_vocab, tab_grammar, tab_listen, tab_read = st.tabs(
         ["📝 單字", "📐 文法", "🔊 聽力", "📖 閱讀"]
+    )
+    stats = corpus_stats()
+    st.caption(
+        f"題庫規模：單字 {stats['vocab']} · 文法 {stats['grammar']} · "
+        f"聽力 {stats['listening']} · 閱讀 {stats['reading']} 題（原創擬真）"
     )
 
     with tab_vocab:

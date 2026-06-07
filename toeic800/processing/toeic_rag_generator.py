@@ -1,0 +1,208 @@
+"""TOEIC 800–900 RAG 擬真出題引擎（原創題目，不依新聞）。
+
+以官方 Part 5–7 格式 + 嵌入題庫檢索，按主題／題型分層抽題。
+題庫為原創擬真題，風格對齊 2023–2025 公開練習題型（office/finance/HR 等）。
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import random
+import re
+from datetime import date
+from typing import Any
+
+from toeic800.data.toeic800_bank import (
+    GRAMMAR_BANK,
+    LISTENING_BANK,
+    READING_BANK,
+    VOCAB_BANK,
+)
+from toeic800.data.toeic800_bank_ext import (
+    GRAMMAR_EXT,
+    LISTENING_EXT,
+    READING_EXT,
+    VOCAB_EXT,
+)
+from toeic800.data.toeic_format_spec import PART5_GRAMMAR_TYPES, TOEIC_TOPICS_800
+from toeic800.data.toeic_rag_patterns import expand_pattern_pool
+from toeic800.processing.toeic_explanations import enrich_question
+
+DAILY_COUNT = 20
+READING_SPLIT = {"single": 8, "double": 7, "triple": 5}
+
+_CORPUS_VERSION = "toeic_rag_v2"
+
+
+def _daily_rng(skill: str, day: date | None = None) -> random.Random:
+    day = day or date.today()
+    seed = int(
+        hashlib.md5(f"{day.isoformat()}:{skill}:{_CORPUS_VERSION}".encode()).hexdigest()[:8],
+        16,
+    )
+    return random.Random(seed)
+
+
+def _normalize(q: dict[str, Any], skill: str) -> dict[str, Any]:
+    item = dict(q)
+    item.setdefault("source", "toeic_rag_original")
+    item.setdefault("score_band", "800-900")
+    if "options_json" not in item and "options" in item:
+        item["options_json"] = json.dumps(item["options"], ensure_ascii=False)
+    return enrich_question(item, skill)
+
+
+def _full_corpus(skill: str) -> list[dict[str, Any]]:
+    """RAG 檢索池：核心題庫 + 擴充題庫 + 模式展開題。"""
+    if skill == "vocab":
+        base = [dict(q) for q in VOCAB_BANK + VOCAB_EXT]
+        expanded = expand_pattern_pool("vocab")
+    elif skill == "grammar":
+        base = [dict(q) for q in GRAMMAR_BANK + GRAMMAR_EXT]
+        expanded = expand_pattern_pool("grammar")
+    elif skill == "listening":
+        base = [dict(q) for q in LISTENING_BANK + LISTENING_EXT]
+        expanded = expand_pattern_pool("listening")
+    elif skill == "reading":
+        base = [dict(q) for q in READING_BANK + READING_EXT]
+        expanded = expand_pattern_pool("reading")
+    else:
+        return []
+
+    seen: set[str] = set()
+    pool: list[dict[str, Any]] = []
+    for q in base + expanded:
+        key = q.get("question", "") + "|" + q.get("answer", "")
+        if key in seen:
+            continue
+        seen.add(key)
+        pool.append(q)
+    return pool
+
+
+def _stratified_pick(
+    pool: list[dict[str, Any]],
+    count: int,
+    rng: random.Random,
+    *,
+    topic_key: str = "topic",
+) -> list[dict[str, Any]]:
+    """按 TOEIC 主題分層抽題，避免單日主題過於集中。"""
+    by_topic: dict[str, list[dict[str, Any]]] = {t: [] for t in TOEIC_TOPICS_800}
+    by_topic["_other"] = []
+    for q in pool:
+        t = q.get(topic_key) or q.get("grammar_type") or "_other"
+        if t in by_topic:
+            by_topic[t].append(q)
+        else:
+            by_topic["_other"].append(q)
+
+    picked: list[dict[str, Any]] = []
+    topics = [t for t in TOEIC_TOPICS_800 if by_topic[t]]
+    rng.shuffle(topics)
+    ti = 0
+    while len(picked) < count and topics:
+        t = topics[ti % len(topics)]
+        candidates = by_topic[t]
+        if candidates:
+            q = rng.choice(candidates)
+            if q not in picked:
+                picked.append(q)
+                candidates.remove(q)
+        if not candidates:
+            topics = [x for x in topics if by_topic[x]]
+        ti += 1
+        if ti > count * 20:
+            break
+
+    remaining = [q for q in pool if q not in picked]
+    rng.shuffle(remaining)
+    while len(picked) < count and remaining:
+        picked.append(remaining.pop())
+    return picked[:count]
+
+
+def build_daily_vocab(_db: Any, count: int = DAILY_COUNT, day: date | None = None) -> list[dict[str, Any]]:
+    rng = _daily_rng("vocab", day)
+    pool = _full_corpus("vocab")
+    picked = _stratified_pick(pool, count, rng)
+    rng.shuffle(picked)
+    return [_normalize(q, "vocab") for q in picked[:count]]
+
+
+def build_daily_grammar(_db: Any, count: int = DAILY_COUNT, day: date | None = None) -> list[dict[str, Any]]:
+    rng = _daily_rng("grammar", day)
+    pool = _full_corpus("grammar")
+    # 文法題確保時態/介系詞等類型分散
+    by_type: dict[str, list] = {g: [] for g in PART5_GRAMMAR_TYPES}
+    by_type["_x"] = []
+    for q in pool:
+        gt = q.get("grammar_type", "_x")
+        (by_type.get(gt) or by_type["_x"]).append(q)
+    picked: list[dict] = []
+    types = [t for t in PART5_GRAMMAR_TYPES if by_type[t]]
+    rng.shuffle(types)
+    for i in range(count):
+        t = types[i % len(types)] if types else "_x"
+        cands = by_type.get(t) or pool
+        if not cands:
+            break
+        q = rng.choice(cands)
+        if q not in picked:
+            picked.append(q)
+    rng.shuffle(picked)
+    while len(picked) < count:
+        q = rng.choice(pool)
+        if q not in picked:
+            picked.append(q)
+    return [_normalize(q, "grammar") for q in picked[:count]]
+
+
+def build_daily_listening(_db: Any, count: int = DAILY_COUNT, day: date | None = None) -> list[dict[str, Any]]:
+    rng = _daily_rng("listening", day)
+    pool = _full_corpus("listening")
+    rng.shuffle(pool)
+    return [_normalize(q, "listening") for q in pool[:count]]
+
+
+def build_daily_reading(_db: Any, count: int = DAILY_COUNT, day: date | None = None) -> list[dict[str, Any]]:
+    rng = _daily_rng("reading", day)
+    pool = _full_corpus("reading")
+    by_fmt: dict[str, list] = {"single": [], "double": [], "triple": []}
+    for q in pool:
+        by_fmt[q.get("format", "single")].append(q)
+    picked: list[dict] = []
+    for fmt, n in READING_SPLIT.items():
+        c = list(by_fmt.get(fmt, []))
+        rng.shuffle(c)
+        picked.extend(c[:n])
+    rng.shuffle(picked)
+    return [_normalize(q, "reading") for q in picked[:count]]
+
+
+def build_daily_set(
+    _db: Any, skill: str, count: int = DAILY_COUNT, day: date | None = None
+) -> list[dict[str, Any]]:
+    builders = {
+        "vocab": build_daily_vocab,
+        "grammar": build_daily_grammar,
+        "listening": build_daily_listening,
+        "reading": build_daily_reading,
+    }
+    fn = builders.get(skill)
+    if not fn:
+        return []
+    items = fn(_db, count, day)
+    for i, q in enumerate(items):
+        q["skill"] = skill
+        q["qid"] = f"{skill}_{i}"
+    return items
+
+
+def corpus_stats() -> dict[str, int]:
+    return {
+        "vocab": len(_full_corpus("vocab")),
+        "grammar": len(_full_corpus("grammar")),
+        "listening": len(_full_corpus("listening")),
+        "reading": len(_full_corpus("reading")),
+    }

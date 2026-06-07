@@ -58,6 +58,7 @@ VOCAB_PER_ARTICLE = int(os.getenv("VOCAB_PER_ARTICLE", "15"))
 # 多益 800+ 每日擬真練習
 DAILY_PRACTICE_COUNT = int(os.getenv("DAILY_PRACTICE_COUNT", "20"))
 DAILY_READING_SPLIT = {"single": 8, "double": 7, "triple": 5}
+TOEIC_RAG_CORPUS_VERSION = "v2"
 
 # RSS 來源
 RSS_FEEDS = {
