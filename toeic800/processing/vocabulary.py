@@ -10,20 +10,12 @@ import requests
 
 from toeic800 import config
 from toeic800.processing.translator import translate_text
+from toeic800.processing.word_levels import ADVANCED_SEED, is_advanced_word, score_word
 
 logger = logging.getLogger(__name__)
 
-# 多益800+ 常見商業／新聞詞彙種子（優先保留）
-TOEIC800_SEED = {
-    "slump", "mounting", "sustainable", "sell-off", "investor", "inflation",
-    "borrowing", "likelihood", "overvalued", "utilities", "staples", "vulnerable",
-    "sentiment", "emphasis", "acquiring", "stake", "executive", "debut",
-    "recession", "tariff", "sanction", "forecast", "surge", "plunge", "rally",
-    "volatility", "portfolio", "dividend", "earnings", "merger", "acquisition",
-    "commodity", "sovereign", "fiscal", "monetary", "stimulus", "deficit",
-    "unemployment", "payroll", "benchmark", "index", "sector", "equity",
-    "bond", "yield", "hedge", "derivative", "liquidity", "capital", "revenue",
-}
+# 保留舊名稱供外部引用
+TOEIC800_SEED = ADVANCED_SEED
 
 STOPWORDS = {
     "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for", "of",
@@ -75,20 +67,15 @@ def _rank_candidates(text: str) -> list[tuple[str, float]]:
     freq: dict[str, int] = {}
     for w in words:
         low = w.lower().strip("'")
-        if len(low) < 4 or low in STOPWORDS:
+        if len(low) < 5 or low in STOPWORDS or not is_advanced_word(low):
             continue
         freq[low] = freq.get(low, 0) + 1
 
     scored: list[tuple[str, float]] = []
     for word, count in freq.items():
-        score = count * 1.0
-        if word in TOEIC800_SEED:
-            score += 5
-        if len(word) >= 7:
-            score += 1.5
-        if "-" in word:
-            score += 0.5
-        scored.append((word, score))
+        s = score_word(word, count)
+        if s > 0:
+            scored.append((word, s))
     scored.sort(key=lambda x: (-x[1], x[0]))
     return scored
 
@@ -172,16 +159,8 @@ def _cache_audio(word: str, url: str) -> str | None:
     return None
 
 
-def ensure_pronunciation(word: str) -> str | None:
-    """若字典無音檔，用 gTTS 產生。"""
-    cached = config.AUDIO_DIR / f"{word.lower()}.mp3"
-    if cached.exists():
-        return str(cached)
-    try:
-        from gtts import gTTS
+def ensure_pronunciation(word: str, accent: str = "US") -> str | None:
+    """Neural TTS 發音（多口音）。"""
+    from toeic800.processing.tts import ensure_word_pronunciation
 
-        gTTS(text=word, lang="en").save(str(cached))
-        return str(cached)
-    except Exception as exc:
-        logger.debug("gTTS 失敗 %s: %s", word, exc)
-        return None
+    return ensure_word_pronunciation(word, accent=accent)

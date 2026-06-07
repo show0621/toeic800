@@ -5,6 +5,7 @@ import logging
 import time
 
 from toeic800 import config
+from toeic800.utils.zh_tw import ensure_zh_tw
 
 logger = logging.getLogger(__name__)
 
@@ -15,9 +16,13 @@ def translate_text(text: str, target: str = "zh-TW") -> str:
         return ""
 
     if config.OPENAI_API_KEY and config.TRANSLATOR == "openai":
-        return _translate_openai(text, target)
+        result = _translate_openai(text, target)
+    else:
+        result = _translate_google(text, target)
 
-    return _translate_google(text, target)
+    if target.startswith("zh"):
+        return ensure_zh_tw(result)
+    return result
 
 
 def translate_batch(texts: list[str], target: str = "zh-TW") -> list[str]:
@@ -61,7 +66,7 @@ def _translate_openai(text: str, target: str) -> str:
             messages=[
                 {
                     "role": "system",
-                    "content": f"你是專業譯者，將英文新聞譯成{lang}，保留財經術語準確性。只輸出譯文。",
+                    "content": f"你是專業譯者，將英文新聞譯成{lang}（臺灣用語），保留財經術語準確性。只輸出譯文，不可使用簡體字。",
                 },
                 {"role": "user", "content": text},
             ],

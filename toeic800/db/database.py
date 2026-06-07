@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Generator
 
 from toeic800 import config
+from toeic800.utils.zh_tw import ensure_zh_tw, normalize_article_zh, normalize_vocab_row
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS articles (
@@ -357,7 +358,13 @@ class ToeicDatabase:
         sql += " ORDER BY published_at DESC, id DESC"
         with self.connect() as conn:
             rows = conn.execute(sql, params).fetchall()
-        return [dict(r) for r in rows]
+        out = [dict(r) for r in rows]
+        for a in out:
+            if a.get("title_zh"):
+                a["title_zh"] = ensure_zh_tw(a["title_zh"])
+            if a.get("summary_zh"):
+                a["summary_zh"] = ensure_zh_tw(a["summary_zh"])
+        return out
 
     def get_article(self, article_id: int) -> dict[str, Any] | None:
         with self.connect() as conn:
@@ -402,7 +409,7 @@ class ToeicDatabase:
                     (article_id,),
                 ).fetchall()
             ]
-        return article
+        return normalize_article_zh(article)
 
     def list_all_vocabulary(
         self,
@@ -434,9 +441,7 @@ class ToeicDatabase:
         sql += " ORDER BY a.week_label DESC, v.sort_order"
         with self.connect() as conn:
             rows = conn.execute(sql, params).fetchall()
-        return [dict(r) for r in rows]
-
-    def add_note(
+        return [normalize_vocab_row(dict(r)) for r in rows]
         self,
         note_text: str,
         article_id: int | None = None,

@@ -8,6 +8,8 @@ from typing import Any
 
 from fpdf import FPDF
 
+from toeic800.utils.zh_tw import ensure_zh_tw
+
 
 def build_vocab_pdf(
     vocabulary: list[dict[str, Any]],
@@ -33,12 +35,12 @@ def build_vocab_pdf(
         pdf.set_font(family, size=11)
         pdf.multi_cell(0, 6, line1)
         pdf.set_font(family, size=9)
-        pdf.multi_cell(0, 5, f"中文：{v.get('meaning_zh', '')}")
+        pdf.multi_cell(0, 5, f"中文：{ensure_zh_tw(v.get('meaning_zh', ''))}")
         if v.get("meaning_en"):
             pdf.multi_cell(0, 5, f"讀音：{v.get('meaning_en', '')}")
         if v.get("example_en"):
             pdf.multi_cell(0, 5, f"例句：{v.get('example_en', '')}")
-            pdf.multi_cell(0, 5, f"      {v.get('example_zh', '')}")
+            pdf.multi_cell(0, 5, f"      {ensure_zh_tw(v.get('example_zh', ''))}")
         pdf.ln(2)
 
     out = pdf.output()

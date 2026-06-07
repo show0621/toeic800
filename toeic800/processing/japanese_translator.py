@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 
-from toeic800 import config
+from toeic800.utils.zh_tw import ensure_zh_tw
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +16,8 @@ def translate_ja_to_zh(text: str) -> str:
         from deep_translator import GoogleTranslator
 
         if len(text) <= 4500:
-            return GoogleTranslator(source="ja", target="zh-TW").translate(text)
+            result = GoogleTranslator(source="ja", target="zh-TW").translate(text)
+            return ensure_zh_tw(result)
         parts = []
         buf = ""
         for sent in re_split_ja(text):
@@ -28,7 +29,7 @@ def translate_ja_to_zh(text: str) -> str:
         if buf:
             parts.append(buf)
         tr = GoogleTranslator(source="ja", target="zh-TW")
-        return "".join(tr.translate(p) for p in parts)
+        return ensure_zh_tw("".join(tr.translate(p) for p in parts))
     except Exception as exc:
         logger.warning("日翻中失敗: %s", exc)
         return ""

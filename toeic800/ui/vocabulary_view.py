@@ -6,14 +6,27 @@ from pathlib import Path
 import streamlit as st
 
 from toeic800.db.database import ToeicDatabase
-from toeic800.processing.tts import ensure_tts
+from toeic800.processing.tts import ACCENT_LABELS, ACCENT_VOICES, ensure_tts
 from toeic800.processing.vocabulary import ensure_pronunciation
+from toeic800.processing.word_levels import filter_advanced_vocabulary
 from toeic800.ui.context import is_japanese, jlpt_level, learning_track
 
 
 def render_vocabulary_page(db: ToeicDatabase) -> None:
     track = learning_track()
     level = jlpt_level() if is_japanese() else None
+    toeic = not is_japanese()
+
+    if toeic:
+        accent = st.selectbox(
+            "朗讀口音",
+            list(ACCENT_VOICES.keys()),
+            format_func=lambda k: ACCENT_LABELS.get(k, k),
+            key="vocab_tts_accent",
+        )
+    else:
+        accent = "US"
+
     weeks = ["全部"] + db.list_weeks(track=track, jlpt_level=level)
     week = st.selectbox("週次篩選", weeks, key="vocab_week")
     week_filter = None if week == "全部" else week
@@ -21,11 +34,14 @@ def render_vocabulary_page(db: ToeicDatabase) -> None:
     vocab_list = db.list_all_vocabulary(
         week_label=week_filter, track=track, jlpt_level=level
     )
+    if toeic:
+        vocab_list = filter_advanced_vocabulary(vocab_list)
+
     if not vocab_list:
-        st.info("尚無單字資料")
+        st.info("尚無單字資料（多益模式僅顯示700+進階生字）")
         return
 
-    fmt = "單字｜詞性｜讀音｜中文｜例句" if is_japanese() else "單字｜詞性｜中文｜英文解釋｜例句"
+    fmt = "單字｜詞性｜讀音｜中文｜例句" if is_japanese() else "進階單字｜詞性｜中文｜英文解釋｜例句"
     st.caption(f"共 {len(vocab_list)} 個單字 · {fmt}")
 
     tts_lang = "ja" if is_japanese() else "en"
@@ -48,19 +64,21 @@ def render_vocabulary_page(db: ToeicDatabase) -> None:
             unsafe_allow_html=True,
         )
         cols = st.columns([2, 2, 2, 2])
-        audio = v.get("audio_path")
-        if not audio or not Path(str(audio)).exists():
-            if is_japanese():
-                from toeic800.processing.japanese_vocabulary import ensure_ja_pronunciation
+        if is_japanese():
+            from toeic800.processing.japanese_vocabulary import ensure_ja_pronunciation
 
+            audio = v.get("audio_path")
+            if not audio or not Path(str(audio)).exists():
                 audio = ensure_ja_pronunciation(v["word"])
-            else:
-                audio = ensure_pronunciation(v["word"])
+        else:
+            audio = ensure_pronunciation(v["word"], accent=accent)
+
         if audio and Path(str(audio)).exists():
+            cols[0].caption("單字")
             cols[0].audio(audio)
 
         if v.get("example_en"):
-            ex_path = ensure_tts(v["example_en"], lang=tts_lang)
+            ex_path = ensure_tts(v["example_en"], lang=tts_lang, accent=accent)
             if ex_path and Path(ex_path).exists():
                 cols[1].caption("例句朗讀")
                 cols[1].audio(ex_path)
