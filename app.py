@@ -48,7 +48,9 @@ inject_theme()
 
 
 @st.cache_resource
-def get_db() -> ToeicDatabase:
+def get_db(_schema_version: str = config.DB_SCHEMA_VERSION) -> ToeicDatabase:
+    """_schema_version 僅用於部署後強制重建 DB 包裝（避免舊類別快取）。"""
+    del _schema_version
     return ToeicDatabase()
 
 

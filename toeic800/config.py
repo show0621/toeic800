@@ -11,6 +11,9 @@ JA_AUDIO_DIR = DATA_DIR / "audio_ja"
 DB_PATH = Path(os.getenv("TOEIC800_DB", str(DATA_DIR / "toeic800.db")))
 DB_SEED_PATH = Path(os.getenv("TOEIC800_SEED", str(DATA_DIR / "toeic800.seed.db")))
 
+# 資料庫 schema 版本；變更時遞增以清除 Streamlit cache_resource 舊實例
+DB_SCHEMA_VERSION = "4"
+
 # 首次啟動且 DB 為空時自動抓取新聞（寫入後重開不再抓取）
 AUTO_BOOTSTRAP_NEWS = os.getenv("AUTO_BOOTSTRAP_NEWS", "true").lower() in (
     "1",
@@ -97,3 +100,17 @@ CAMBRIDGE_DICT_ENABLED = os.getenv("CAMBRIDGE_DICT_ENABLED", "true").lower() in 
 )
 CAMBRIDGE_REQUEST_GAP_SEC = float(os.getenv("CAMBRIDGE_REQUEST_GAP_SEC", "1.2"))
 CAMBRIDGE_REQUEST_TIMEOUT = int(os.getenv("CAMBRIDGE_REQUEST_TIMEOUT", "15"))
+
+# 公開資源混入每日擬真練習（Cambridge / Tatoeba / 新聞 DB 等）
+OPEN_RESOURCES_ENABLED = os.getenv("OPEN_RESOURCES_ENABLED", "true").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+OPEN_RESOURCE_MIX_RATIO = float(os.getenv("OPEN_RESOURCE_MIX_RATIO", "0.3"))
+TATOEBA_ENABLED = os.getenv("TATOEBA_ENABLED", "true").lower() in ("1", "true", "yes")
+TATOEBA_REQUEST_GAP_SEC = float(os.getenv("TATOEBA_REQUEST_GAP_SEC", "1.0"))
+TATOEBA_REQUEST_TIMEOUT = int(os.getenv("TATOEBA_REQUEST_TIMEOUT", "12"))
+TATOEBA_CACHE_HOURS = int(os.getenv("TATOEBA_CACHE_HOURS", "168"))
+WIKTIONARY_ENABLED = os.getenv("WIKTIONARY_ENABLED", "true").lower() in ("1", "true", "yes")
+WIKTIONARY_REQUEST_GAP_SEC = float(os.getenv("WIKTIONARY_REQUEST_GAP_SEC", "1.0"))

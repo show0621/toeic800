@@ -31,6 +31,36 @@ def _dict_fields(info: dict[str, Any]) -> dict[str, Any]:
     return vocab_dict_fields(info)
 
 
+def _fresh_db() -> ToeicDatabase:
+    """略過 cache_resource，取得目前程式碼的 ToeicDatabase。"""
+    return ToeicDatabase()
+
+
+def _set_study_status(db: ToeicDatabase, vocab_id: int, status: str) -> None:
+    """寫入 study_status；相容舊版快取 db 實例。"""
+    setter = getattr(db, "set_vocab_study_status", None)
+    if callable(setter):
+        setter(vocab_id, status)
+        return
+    updater = getattr(db, "update_vocab_entry", None)
+    if callable(updater):
+        updater(vocab_id, study_status=status)
+        return
+    _fresh_db().set_vocab_study_status(vocab_id, status)
+
+
+def _update_vocab(db: ToeicDatabase, vocab_id: int, **fields: Any) -> None:
+    updater = getattr(db, "update_vocab_entry", None)
+    if callable(updater):
+        updater(vocab_id, **fields)
+    else:
+        _fresh_db().update_vocab_entry(vocab_id, **fields)
+
+
+def _invalidate_db_cache() -> None:
+    st.cache_resource.clear()
+
+
 def _status_badge(status: str) -> str:
     label = STATUS_LABELS.get(status, status)
     if status == STUDY_INCLUDED:
@@ -98,7 +128,10 @@ def _render_vocab_row(
     toeic: bool,
     japanese: bool,
 ) -> None:
-    vid = v["id"]
+    vid = v.get("id")
+    if not vid:
+        st.warning(f"「{v.get('word', '?')}」缺少 id，請重新抓取文章或更新 App。")
+        return
     word = v["word"]
     status = normalize_study_status(v.get("study_status"))
     active = vocab_is_active(v, toeic=toeic)
@@ -115,15 +148,18 @@ def _render_vocab_row(
         with h2:
             b1, b2, b3 = st.columns(3)
             if b1.button("納入", key=f"vin_{vid}", type="primary" if status != STUDY_INCLUDED else "secondary"):
-                db.set_vocab_study_status(vid, STUDY_INCLUDED)
+                _set_study_status(db, vid, STUDY_INCLUDED)
+                _invalidate_db_cache()
                 st.toast(f"已納入：{word}")
                 st.rerun()
             if b2.button("不納入", key=f"vex_{vid}"):
-                db.set_vocab_study_status(vid, STUDY_EXCLUDED)
+                _set_study_status(db, vid, STUDY_EXCLUDED)
+                _invalidate_db_cache()
                 st.toast(f"已不納入：{word}")
                 st.rerun()
             if b3.button("恢復自動", key=f"vauto_{vid}"):
-                db.set_vocab_study_status(vid, STUDY_AUTO)
+                _set_study_status(db, vid, STUDY_AUTO)
+                _invalidate_db_cache()
                 st.toast(f"已恢復自動：{word}")
                 st.rerun()
 
@@ -140,7 +176,8 @@ def _render_vocab_row(
                     else:
                         path = ensure_pronunciation(word, accent=accent)
                 if path and Path(path).exists():
-                    db.update_vocab_entry(vid, audio_path=path)
+                    _update_vocab(db, vid, audio_path=path)
+                    _invalidate_db_cache()
                     st.toast("語音已儲存")
                     st.rerun()
                 else:
@@ -150,7 +187,8 @@ def _render_vocab_row(
                 with st.spinner("查詢 Cambridge Dictionary…"):
                     info = lookup_word(word)
                 if info:
-                    db.update_vocab_entry(vid, **_dict_fields(info))
+                    _update_vocab(db, vid, **_dict_fields(info))
+                    _invalidate_db_cache()
                     st.toast("已更新釋義與例句")
                     st.rerun()
                 else:
@@ -204,13 +242,25 @@ def _render_add_word_section(
             info = lookup_word(word) or apply_glossary(word, {"word": word, "meaning_en": word, "meaning_zh": ""})
             if not info.get("meaning_zh") and info.get("meaning_en"):
                 info["meaning_zh"] = translate_text(info["meaning_en"])
-        db.add_vocab_entry(
-            article_id,
-            {
-                "word": word,
-                "study_status": STUDY_INCLUDED,
-                **_dict_fields(info),
-            },
-        )
+        adder = getattr(db, "add_vocab_entry", None)
+        if callable(adder):
+            adder(
+                article_id,
+                {
+                    "word": word,
+                    "study_status": STUDY_INCLUDED,
+                    **_dict_fields(info),
+                },
+            )
+        else:
+            _fresh_db().add_vocab_entry(
+                article_id,
+                {
+                    "word": word,
+                    "study_status": STUDY_INCLUDED,
+                    **_dict_fields(info),
+                },
+            )
+        _invalidate_db_cache()
         st.success(f"已加入：{word}")
         st.rerun()
