@@ -3,6 +3,7 @@
 __pycache__/
 *.pyc
 data/toeic800.db
+data/cache/
 data/audio/*.mp3
 data/audio/**/*.mp3
 data/audio/words/**/*.mp3

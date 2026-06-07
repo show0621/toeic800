@@ -27,8 +27,8 @@ def render_daily_practice_page(db: ToeicDatabase) -> None:
     today = date.today()
     st.markdown("### 每日擬真練習 · 800–900 分")
     st.caption(
-        f"📅 {today.isoformat()} · 聽力 / 文法 / 單字 / 閱讀 各 {DAILY_COUNT} 題 · "
-        "TOEIC 800–900 RAG 原創擬真題庫（Part 5–7 · 非新聞）· 可點「查看答案與解析」"
+        f"📅 {today.isoformat()} · 聽力 / 文法 / 單字 / 片語 / 閱讀 各 {DAILY_COUNT} 題 · "
+        "原創擬真題庫 + 公開資源改編（Cambridge / Tatoeba / 新聞摘錄）· 非官方考古題"
     )
 
     accent_options = ["US", "UK", "AU", "IN", "MIX"]
@@ -41,19 +41,29 @@ def render_daily_practice_page(db: ToeicDatabase) -> None:
         help="同一題對話中，女聲與男聲使用相同國別口音；「混合各國」則每題隨機換口音。",
     )
 
-    tab_vocab, tab_grammar, tab_listen, tab_read = st.tabs(
-        ["📝 單字", "📐 文法", "🔊 聽力", "📖 閱讀"]
+    tab_vocab, tab_grammar, tab_phrase, tab_listen, tab_read = st.tabs(
+        ["📝 單字", "📐 文法", "🔗 片語", "🔊 聽力", "📖 閱讀"]
     )
-    stats = corpus_stats()
+    stats = corpus_stats(db)
+    open_line = ""
+    if stats.get("open_vocab") is not None:
+        open_line = (
+            f" · 公開資源池 ≈ 單字 {stats.get('open_vocab', 0)} / "
+            f"片語 {stats.get('open_phrase', 0)} / "
+            f"閱讀 {stats.get('open_reading', 0)} / "
+            f"聽力 {stats.get('open_listening', 0)}"
+        )
     st.caption(
-        f"題庫規模：單字 {stats['vocab']} · 文法 {stats['grammar']} · "
-        f"聽力 {stats['listening']} · 閱讀 {stats['reading']} 題（原創擬真）"
+        f"原創題庫：單字 {stats['vocab']} · 文法 {stats['grammar']} · "
+        f"聽力 {stats['listening']} · 閱讀 {stats['reading']}{open_line}"
     )
 
     with tab_vocab:
         _render_skill_tab(db, "vocab", "單字", accent=None)
     with tab_grammar:
         _render_skill_tab(db, "grammar", "文法", accent=None)
+    with tab_phrase:
+        _render_skill_tab(db, "phrase", "片語", accent=None)
     with tab_listen:
         _render_skill_tab(db, "listening", "聽力", accent=accent)
     with tab_read:
@@ -97,6 +107,8 @@ def _render_answer_popover(q: dict, choice: str | None, *, key: str) -> None:
             st.markdown(f"{icon} **你的選擇：** {choice}")
         st.markdown(f"✅ **正解：** {q['answer']}")
         st.markdown(q.get("detail_zh") or q.get("explanation_zh") or "—")
+        if q.get("source_url"):
+            st.caption(f"🔗 {q.get('source_note') or '內容來源'}")
         if q.get("detail_en"):
             st.markdown("---")
             st.caption("English explanation")
@@ -112,6 +124,8 @@ def _render_submit_result(q: dict, choice: str, *, show_only: bool = False) -> N
         st.error(f"❌ 答錯了。正解：**{q['answer']}**")
     with st.expander("📖 詳細解析（必讀）", expanded=True):
         st.markdown(q.get("detail_zh") or q.get("explanation_zh") or "—")
+        if q.get("source_url"):
+            st.caption(f"🔗 {q.get('source_note') or '內容來源'}")
         if q.get("detail_en"):
             st.caption("English")
             st.markdown(q["detail_en"])

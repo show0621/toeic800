@@ -10,6 +10,7 @@ from toeic800.db.database import ToeicDatabase
 from toeic800.processing.japanese_vocabulary import ensure_ja_pronunciation
 from toeic800.processing.pdf_export import build_vocab_pdf
 from toeic800.ui.context import jlpt_level, learning_track
+from toeic800.ui.theme import render_vocab_card
 
 
 def _pick_article(db: ToeicDatabase) -> dict | None:
@@ -40,16 +41,14 @@ def render_grammar_page(db: ToeicDatabase) -> None:
         st.warning("此篇尚未分析文法點")
         return
     for g in grammar:
-        st.markdown(
-            f"""
-            <div class="vocab-card">
-              <span class="vocab-word">{g['pattern']}</span>
-              <div><strong>說明：</strong>{g.get('meaning_zh') or '—'}</div>
-              <div><strong>例句：</strong>{g.get('example_ja') or '—'}</div>
-              <div style="color:#64748b">{g.get('example_zh') or ''}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
+        render_vocab_card(
+            word=g["pattern"],
+            meaning_label="說明",
+            meaning_zh=g.get("meaning_zh") or "",
+            secondary_label="",
+            example_label="例句",
+            example_en=g.get("example_ja") or "",
+            example_zh=g.get("example_zh") or "",
         )
 
 
@@ -133,4 +132,6 @@ def render_pdf_page(db: ToeicDatabase) -> None:
             )
         except Exception as exc:
             st.error(f"PDF 產生失敗：{exc}")
-            st.caption("若字型缺失，請確認 Windows 已安裝微軟正黑體。")
+            st.caption(
+                "若為雲端部署，請確認可連線 jsdelivr CDN 或 repo 已含內建 Noto Sans TC 字型。"
+            )

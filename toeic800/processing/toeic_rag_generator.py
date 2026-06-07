@@ -30,6 +30,14 @@ from toeic800.data.toeic800_bank_ext import (
 from toeic800.data.toeic_format_spec import PART5_GRAMMAR_TYPES, TOEIC_TOPICS_800
 from toeic800.data.toeic_rag_patterns import expand_pattern_pool
 from toeic800.processing.listening_validator import filter_listening_pool
+from toeic800.processing.practice_open_mixer import (
+    build_open_listening_questions,
+    build_open_phrase_questions,
+    build_open_reading_questions,
+    build_open_vocab_questions,
+    mix_open_into,
+    open_pool_stats,
+)
 from toeic800.processing.toeic_explanations import enrich_question
 
 DAILY_COUNT = 20
@@ -140,15 +148,42 @@ def _stratified_pick(
     return picked[:count]
 
 
-def build_daily_vocab(_db: Any, count: int = DAILY_COUNT, day: date | None = None) -> list[dict[str, Any]]:
+def _apply_open_mix(
+    db: Any,
+    skill: str,
+    base: list[dict[str, Any]],
+    rng: random.Random,
+    count: int,
+) -> list[dict[str, Any]]:
+    if not config.OPEN_RESOURCES_ENABLED or db is None:
+        return base
+    open_builders = {
+        "vocab": lambda: build_open_vocab_questions(db, count, rng),
+        "grammar": lambda: build_open_phrase_questions(count, rng),
+        "phrase": lambda: build_open_phrase_questions(count, rng),
+        "listening": lambda: build_open_listening_questions(count, rng),
+        "reading": lambda: build_open_reading_questions(db, count, rng),
+    }
+    fn = open_builders.get(skill)
+    if not fn:
+        return base
+    try:
+        open_qs = fn()
+    except Exception:
+        return base
+    return mix_open_into(base, open_qs, rng)
+
+
+def build_daily_vocab(db: Any, count: int = DAILY_COUNT, day: date | None = None) -> list[dict[str, Any]]:
     rng = _daily_rng("vocab", day)
     pool = _full_corpus("vocab")
     picked = _stratified_pick(pool, count, rng)
     rng.shuffle(picked)
+    picked = _apply_open_mix(db, "vocab", picked, rng, count)
     return [_normalize(q, "vocab") for q in picked[:count]]
 
 
-def build_daily_grammar(_db: Any, count: int = DAILY_COUNT, day: date | None = None) -> list[dict[str, Any]]:
+def build_daily_grammar(db: Any, count: int = DAILY_COUNT, day: date | None = None) -> list[dict[str, Any]]:
     rng = _daily_rng("grammar", day)
     pool = _full_corpus("grammar")
     # 文法題確保時態/介系詞等類型分散
@@ -173,18 +208,38 @@ def build_daily_grammar(_db: Any, count: int = DAILY_COUNT, day: date | None = N
         q = rng.choice(pool)
         if q not in picked:
             picked.append(q)
+    picked = _apply_open_mix(db, "grammar", picked, rng, count)
     return [_normalize(q, "grammar") for q in picked[:count]]
 
 
-def build_daily_listening(_db: Any, count: int = DAILY_COUNT, day: date | None = None) -> list[dict[str, Any]]:
+def build_daily_phrase(db: Any, count: int = DAILY_COUNT, day: date | None = None) -> list[dict[str, Any]]:
+    """片語／搭配詞（Tatoeba + Wiktionary + 原創模板）。"""
+    rng = _daily_rng("phrase", day)
+    pool = [q for q in _full_corpus("grammar") if q.get("grammar_type") == "collocation"]
+    pool += expand_pattern_pool("grammar")
+    pool = _dedupe_pool(pool)
+    picked = _stratified_pick(pool, count, rng) if pool else []
+    while len(picked) < count and pool:
+        q = rng.choice(pool)
+        if q not in picked:
+            picked.append(q)
+    if len(picked) < count:
+        picked.extend(build_open_phrase_questions(count, rng))
+    picked = _apply_open_mix(db, "phrase", picked[:count], rng, count)
+    rng.shuffle(picked)
+    return [_normalize(q, "phrase") for q in picked[:count]]
+
+
+def build_daily_listening(db: Any, count: int = DAILY_COUNT, day: date | None = None) -> list[dict[str, Any]]:
     rng = _daily_rng("listening", day)
     pool = _full_corpus("listening")
     picked = _stratified_pick(pool, count, rng)
     rng.shuffle(picked)
+    picked = _apply_open_mix(db, "listening", picked, rng, count)
     return [_normalize(q, "listening") for q in picked[:count]]
 
 
-def build_daily_reading(_db: Any, count: int = DAILY_COUNT, day: date | None = None) -> list[dict[str, Any]]:
+def build_daily_reading(db: Any, count: int = DAILY_COUNT, day: date | None = None) -> list[dict[str, Any]]:
     rng = _daily_rng("reading", day)
     pool = _full_corpus("reading")
     by_fmt: dict[str, list] = {"single": [], "double": [], "triple": []}
@@ -196,32 +251,42 @@ def build_daily_reading(_db: Any, count: int = DAILY_COUNT, day: date | None = N
         rng.shuffle(c)
         picked.extend(c[:n])
     rng.shuffle(picked)
+    picked = _apply_open_mix(db, "reading", picked, rng, count)
     return [_normalize(q, "reading") for q in picked[:count]]
 
 
 def build_daily_set(
-    _db: Any, skill: str, count: int = DAILY_COUNT, day: date | None = None
+    db: Any, skill: str, count: int = DAILY_COUNT, day: date | None = None
 ) -> list[dict[str, Any]]:
     builders = {
         "vocab": build_daily_vocab,
         "grammar": build_daily_grammar,
+        "phrase": build_daily_phrase,
         "listening": build_daily_listening,
         "reading": build_daily_reading,
     }
     fn = builders.get(skill)
     if not fn:
         return []
-    items = fn(_db, count, day)
+    items = fn(db, count, day)
     for i, q in enumerate(items):
         q["skill"] = skill
         q["qid"] = f"{skill}_{i}"
     return items
 
 
-def corpus_stats() -> dict[str, int]:
-    return {
+def corpus_stats(db: Any = None) -> dict[str, int]:
+    stats = {
         "vocab": len(_full_corpus("vocab")),
         "grammar": len(_full_corpus("grammar")),
+        "phrase": len(_full_corpus("grammar")),
         "listening": len(_full_corpus("listening")),
         "reading": len(_full_corpus("reading")),
     }
+    if config.OPEN_RESOURCES_ENABLED:
+        open_s = open_pool_stats(db if db is not None else None)
+        stats["open_vocab"] = open_s["open_vocab"]
+        stats["open_phrase"] = open_s["open_phrase"]
+        stats["open_reading"] = open_s["open_reading"]
+        stats["open_listening"] = open_s["open_listening"]
+    return stats

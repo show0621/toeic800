@@ -28,6 +28,7 @@ from toeic800.processing.vocab_selection import filter_active_vocabulary
 from toeic800.ui.context import is_japanese, jlpt_level, learning_track
 
 from toeic800.ui.disclaimer import render_disclaimer
+from toeic800.ui.theme import render_vocab_card
 
 
 
@@ -104,34 +105,16 @@ def render_vocabulary_page(db: ToeicDatabase) -> None:
 
         meaning2_label = "讀音" if is_japanese() else "英文"
 
-        st.markdown(
-
-            f"""
-
-            <div class="vocab-card">
-
-              <span class="vocab-word">{v['word']}</span>
-
-              <span class="vocab-pos">{v.get('pos') or ''}</span>
-
-              <div class="vocab-ipa">{v.get('phonetic') or ''}</div>
-
-              <div><strong>中文：</strong>{v.get('meaning_zh') or '—'}</div>
-
-              <div><strong>{meaning2_label}：</strong>{v.get('meaning_en') or '—'}</div>
-
-              <div><strong>例句（原創）：</strong>{v.get('example_en') or '—'}</div>
-
-              <div style="color:#64748b">{v.get('example_zh') or ''}</div>
-
-              <div style="font-size:0.8rem;color:#94a3b8;margin-top:0.35rem">出處：{v.get('article_title','')[:40]}</div>
-
-            </div>
-
-            """,
-
-            unsafe_allow_html=True,
-
+        render_vocab_card(
+            word=v["word"],
+            pos=v.get("pos") or "",
+            phonetic=v.get("phonetic") or "",
+            meaning_zh=v.get("meaning_zh") or "",
+            secondary_label=meaning2_label,
+            secondary=v.get("meaning_en") or "",
+            example_en=v.get("example_en") or "",
+            example_zh=v.get("example_zh") or "",
+            source=v.get("article_title") or "",
         )
         render_dict_attribution(v)
 
@@ -273,7 +256,10 @@ def _render_pdf_export(
 
                 st.error(f"PDF 產生失敗：{exc}")
 
-                st.caption("請確認 Windows 已安裝微軟正黑體（msjh.ttc）。")
+                st.caption(
+                    "若為雲端部署，請確認可連線 jsdelivr CDN 或 repo 已含 "
+                    "toeic800/assets/fonts/NotoSansTC-Regular.ttf。"
+                )
 
 
 

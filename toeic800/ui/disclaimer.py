@@ -26,11 +26,14 @@ DISCLAIMER_SECTIONS: list[tuple[str, str]] = [
 
         "TOEIC 擬真練習",
 
-        "每日練習題目為本專案**原創擬真練習**，僅參考 IIBC 公開之測驗格式說明（Part 5–7 題型、主題類別），"
-
-        "**非** ETS／IIBC 官方試題，亦**未**複製任何商業機構題庫或官方考古題原文。"
-
-        "本 App **不提供**官方認證、成績換算或任何形式的官方背書。",
+        "每日練習為**原創擬真** + **公開資源改編**（非 ETS／IIBC 官方試題）："
+        "題型參考 [IIBC 公開格式](https://www.iibc-global.org/english/toeic/test/lr/about/format.html)；"
+        "單字例句可引用 [Cambridge Dictionary](https://dictionary.cambridge.org/zht/)（摘錄一義一例）；"
+        "片語例句可改編 [Tatoeba](https://tatoeba.org/)（CC BY 2.0 FR）；"
+        "閱讀可摘錄本 App 已存新聞短段（著作權屬原媒體，請至原文閱讀）；"
+        "聽力語音為 Neural TTS 合成。"
+        "**禁止**使用官方考古題或商業題庫原文。"
+        "本 App **不提供**官方認證或成績換算。",
 
     ),
 

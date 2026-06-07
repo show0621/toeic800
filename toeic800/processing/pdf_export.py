@@ -1,13 +1,25 @@
 """單字 PDF 匯出（精美排版）。"""
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import requests
 from fpdf import FPDF
 
+from toeic800.config import DATA_DIR, ROOT
 from toeic800.utils.zh_tw import ensure_zh_tw
+
+logger = logging.getLogger(__name__)
+
+_BUNDLED_FONT = ROOT / "toeic800" / "assets" / "fonts" / "NotoSansTC-Regular.ttf"
+_CACHED_FONT = DATA_DIR / "fonts" / "NotoSansTC-Regular.ttf"
+_FONT_CDN_URL = (
+    "https://cdn.jsdelivr.net/fontsource/fonts/noto-sans-tc@5.2.5/"
+    "chinese-traditional-400-normal.ttf"
+)
 
 # 配色：深藍 + 金 + 灰
 C_NAVY = (30, 58, 95)
@@ -31,17 +43,42 @@ def build_vocab_pdf(
     return _build_simple_pdf(vocabulary, title=title, jlpt_level=jlpt_level)
 
 
-def _font_path() -> Path:
-    candidates = [
+def _font_candidates() -> list[Path]:
+    linux = [
+        Path("/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc"),
+        Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),
+        Path("/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc"),
+        Path("/usr/share/fonts/truetype/arphic/uming.ttc"),
+    ]
+    windows = [
         Path(r"C:\Windows\Fonts\msjh.ttc"),
         Path(r"C:\Windows\Fonts\msyh.ttc"),
         Path(r"C:\Windows\Fonts\mingliu.ttc"),
-        Path(r"C:\Windows\Fonts\msgothic.ttc"),
     ]
-    for p in candidates:
+    return [_BUNDLED_FONT, _CACHED_FONT, *linux, *windows]
+
+
+def _download_cjk_font(dest: Path) -> Path:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    resp = requests.get(_FONT_CDN_URL, timeout=60)
+    resp.raise_for_status()
+    if len(resp.content) < 100_000:
+        raise RuntimeError("下載的字型檔案大小異常")
+    dest.write_bytes(resp.content)
+    logger.info("已下載 PDF 字型至 %s", dest)
+    return dest
+
+
+def _font_path() -> Path:
+    for p in _font_candidates():
         if p.exists():
             return p
-    raise FileNotFoundError("找不到中文字型（微軟正黑體 / 細明體）")
+    try:
+        return _download_cjk_font(_CACHED_FONT)
+    except Exception as exc:
+        raise FileNotFoundError(
+            "找不到中文字型（內建 Noto Sans TC、系統字型或 CDN 下載均失敗）"
+        ) from exc
 
 
 class _VocabPDF(FPDF):

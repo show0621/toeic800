@@ -7,6 +7,7 @@ from typing import Any
 PART_LABELS: dict[str, str] = {
     "vocab": "Part 5 · 單字／詞性",
     "grammar": "Part 5/6 · 文法結構",
+    "phrase": "Part 5 · 片語／搭配詞",
     "listening": "Part 3/4 · 聽力理解",
     "reading_single": "Part 7 · 單篇閱讀",
     "reading_double": "Part 7 · 雙篇閱讀",
@@ -68,6 +69,11 @@ def build_detail_zh(q: dict[str, Any], skill: str) -> str:
         if cites:
             lines.append("**文章依據：**")
             lines.extend(cites)
+
+    if q.get("source_note"):
+        lines.append(f"**內容來源：** {q['source_note']}")
+    elif q.get("content_source"):
+        lines.append(f"**內容來源：** {q['content_source']}")
 
     return "\n\n".join(lines)
 

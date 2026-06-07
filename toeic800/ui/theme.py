@@ -1,5 +1,7 @@
 """Streamlit 主題樣式。"""
 
+from html import escape
+
 import streamlit as st
 
 
@@ -32,3 +34,49 @@ def inject_theme() -> None:
 def hero(title: str, subtitle: str) -> None:
     st.markdown(f"## {title}")
     st.markdown(f'<p class="hero-sub">{subtitle}</p>', unsafe_allow_html=True)
+
+
+def render_vocab_card(
+    *,
+    word: str,
+    pos: str = "",
+    phonetic: str = "",
+    meaning_label: str = "中文",
+    meaning_zh: str = "",
+    secondary_label: str = "英文",
+    secondary: str = "",
+    example_label: str = "例句（原創）",
+    example_en: str = "",
+    example_zh: str = "",
+    source: str = "",
+) -> None:
+    """以 st.html 渲染單字卡（避免 markdown 將縮排 HTML 當成 code block）。"""
+    e = escape
+    parts = [
+        '<div class="vocab-card">',
+        f'<span class="vocab-word">{e(word)}</span>',
+    ]
+    if pos:
+        parts.append(f' <span class="vocab-pos">{e(pos)}</span>')
+    if phonetic:
+        parts.append(f'<div class="vocab-ipa">{e(phonetic)}</div>')
+    parts.append(
+        f'<div><strong>{e(meaning_label)}：</strong>{e(meaning_zh) or "—"}</div>'
+    )
+    if secondary_label:
+        parts.append(
+            f'<div><strong>{e(secondary_label)}：</strong>{e(secondary) or "—"}</div>'
+        )
+    if example_label:
+        parts.append(
+            f'<div><strong>{e(example_label)}：</strong>{e(example_en) or "—"}</div>'
+        )
+    if example_zh:
+        parts.append(f'<div style="color:#64748b">{e(example_zh)}</div>')
+    if source:
+        parts.append(
+            f'<div style="font-size:0.8rem;color:#94a3b8;margin-top:0.35rem">'
+            f"出處：{e(source[:40])}</div>"
+        )
+    parts.append("</div>")
+    st.html("".join(parts))
