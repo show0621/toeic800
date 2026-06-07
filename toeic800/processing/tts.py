@@ -43,7 +43,7 @@ ACCENT_LABELS: dict[str, str] = {
     "UK": "英國",
     "AU": "澳洲",
     "IN": "印度",
-    "MIX": "混合各國口音",
+    "MIX": "混合各國（每題不同口音）",
 }
 
 _DIALOGUE_TURN_RE = re.compile(r"^([WM]):\s*(.+)$", re.IGNORECASE | re.DOTALL)
@@ -77,46 +77,26 @@ def _pick_dialogue_voices(
     accent: str = "MIX",
     seed: int | None = None,
 ) -> list[tuple[str, str, str]]:
-    """為每段對話分配 (voice_id, accent, speaker_label)；同角色沿用同一語音。"""
+    """為每段對話分配語音；同一題對話固定同一口音，僅男女聲不同。"""
     rng = random.Random(seed)
-    accents = list(ACCENTS)
-    female: tuple[str, str] | None = None  # (voice, accent)
-    male: tuple[str, str] | None = None
+    if accent in ACCENTS:
+        dialogue_accent = accent
+    else:
+        # 混合模式：每「題」隨機一種口音，對話中兩人使用相同國別（較自然）
+        dialogue_accent = rng.choice(ACCENTS)
+
+    female = (FEMALE_VOICES[dialogue_accent], dialogue_accent)
+    male = (MALE_VOICES[dialogue_accent], dialogue_accent)
     out: list[tuple[str, str, str]] = []
-
-    def _choose_female() -> tuple[str, str]:
-        nonlocal female
-        if female:
-            return female
-        ac = accent if accent in ACCENTS else rng.choice(accents)
-        female = (FEMALE_VOICES[ac], ac)
-        return female
-
-    def _choose_male() -> tuple[str, str]:
-        nonlocal male
-        if male:
-            return male
-        if accent in ACCENTS:
-            ac = accent
-        else:
-            # 混合模式：男聲優先選與女聲不同口音
-            f_ac = female[1] if female else None
-            pool = [a for a in accents if a != f_ac] or accents
-            ac = rng.choice(pool)
-        male = (MALE_VOICES[ac], ac)
-        return male
 
     for speaker, _line in turns:
         if speaker == "N":
-            ac = accent if accent in ACCENTS else rng.choice(accents)
-            out.append((ACCENT_VOICES.get(ac, ACCENT_VOICES["US"]), ac, "N"))
+            out.append((ACCENT_VOICES[dialogue_accent], dialogue_accent, "N"))
             continue
         if speaker == "W":
-            voice, ac = _choose_female()
-            out.append((voice, ac, "W"))
+            out.append((female[0], female[1], "W"))
         else:
-            voice, ac = _choose_male()
-            out.append((voice, ac, "M"))
+            out.append((male[0], male[1], "M"))
     return out
 
 
@@ -126,7 +106,7 @@ def _build_dialogue_ssml(assignments: list[tuple[str, str, str, str]]) -> str:
     prev_label = ""
     for voice, _ac, label, line in assignments:
         if prev_label and label != prev_label:
-            chunks.append('<break time="550ms"/>')
+            chunks.append('<break time="800ms"/>')
         safe = html.escape(line.strip(), quote=False)
         chunks.append(f'<voice name="{voice}">{safe}</voice>')
         prev_label = label
@@ -169,8 +149,8 @@ def ensure_dialogue_tts(
     accent: str = "MIX",
     seed: int | None = None,
     cache_dir: Path | None = None,
-) -> str | None:
-    """聽力對話：男女不同 Neural 語音，可混合各國口音。"""
+) -> str | list[str] | None:
+    """聽力對話：男女不同 Neural 語音。回傳單一 mp3 或分段 mp3 列表。"""
     text = (text or "").strip()
     if not text:
         return None
@@ -197,33 +177,35 @@ def ensure_dialogue_tts(
     if dest.exists() and dest.stat().st_size > 0:
         return str(dest)
 
-    if _edge_tts_save(ssml, "", dest, ssml=True):
+    if _edge_tts_save(ssml, "en-US-JennyNeural", dest):
         return str(dest)
 
-    # 備援：分段合成（仍保持男女不同語音）
-    return _dialogue_concat_fallback(assignments, dest)
-
-
-def _dialogue_concat_fallback(
-    assignments: list[tuple[str, str, str, str]], dest: Path
-) -> str | None:
-    """Edge SSML 失敗時，分段合成後串接 MP3。"""
-    seg_dir = dest.parent / "segments"
+    # SSML 失敗：分段合成，由 UI 依序播放（避免 MP3 硬拼接失真）
+    segments: list[str] = []
+    seg_dir = cache_dir / "segments" / key
     seg_dir.mkdir(parents=True, exist_ok=True)
-    blobs: list[bytes] = []
     for i, (voice, _ac, _label, line) in enumerate(assignments):
-        seg = seg_dir / f"{dest.stem}_{i}.mp3"
-        if not seg.exists() or seg.stat().st_size == 0:
-            if not _edge_tts_save(line, voice, seg):
-                continue
-        try:
-            blobs.append(seg.read_bytes())
-        except OSError:
+        seg = seg_dir / f"{i}.mp3"
+        if seg.exists() and seg.stat().st_size > 0:
+            segments.append(str(seg))
             continue
-    if not blobs:
-        return _gtts_save(assignments[0][3], "en", dest)
-    dest.write_bytes(b"".join(blobs))
-    return str(dest) if dest.exists() else None
+        if _edge_tts_save(line.strip(), voice, seg):
+            segments.append(str(seg))
+    return segments if segments else None
+
+
+def format_dialogue_script(text: str) -> list[tuple[str, str]]:
+    """將 W:/M: 轉為 (角色, 台詞) 供 UI 顯示。"""
+    turns = parse_dialogue(text)
+    out: list[tuple[str, str]] = []
+    for spk, line in turns:
+        if spk == "W":
+            out.append(("女", line))
+        elif spk == "M":
+            out.append(("男", line))
+        else:
+            out.append(("旁白", line))
+    return out
 
 
 def ensure_tts(
