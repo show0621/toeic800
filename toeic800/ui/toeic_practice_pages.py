@@ -9,7 +9,12 @@ import streamlit as st
 
 from toeic800.db.database import ToeicDatabase
 from toeic800.processing.toeic_practice import DAILY_COUNT, build_daily_set
-from toeic800.processing.tts import ACCENT_LABELS, ACCENT_VOICES, ensure_tts
+from toeic800.processing.tts import (
+    ACCENT_LABELS,
+    ACCENTS,
+    dialogue_voice_summary,
+    ensure_dialogue_tts,
+)
 
 
 def render_daily_practice_page(db: ToeicDatabase) -> None:
@@ -20,11 +25,13 @@ def render_daily_practice_page(db: ToeicDatabase) -> None:
         "題目每日更新（同日期題組固定，隔日換新）"
     )
 
+    accent_options = ["MIX"] + list(ACCENTS)
     accent = st.selectbox(
-        "聽力朗讀口音",
-        list(ACCENT_VOICES.keys()),
+        "聽力語音",
+        accent_options,
         format_func=lambda k: ACCENT_LABELS.get(k, k),
         key="toeic_practice_accent",
+        help="「混合各國口音」：女聲與男聲使用不同 Neural 語音，並隨機搭配美/英/澳/印口音，更接近多益真實聽力。",
     )
 
     tab_vocab, tab_grammar, tab_listen, tab_read = st.tabs(
@@ -102,10 +109,21 @@ def _render_skill_tab(
     st.progress((idx + 1) / len(questions), text=f"第 {idx + 1} / {len(questions)} 題 · {label}")
 
     if skill == "listening" and q.get("audio_text"):
-        st.caption("🔊 請先聽音檔再作答")
-        audio_path = ensure_tts(q["audio_text"], lang="en", accent=accent or "US")
+        seed = hash(f"{date.today().isoformat()}:{q.get('qid', idx)}:{q['audio_text']}") & 0xFFFFFFFF
+        voice_info = dialogue_voice_summary(
+            q["audio_text"], accent=accent or "MIX", seed=seed
+        )
+        st.caption(f"🔊 請先聽音檔再作答 · Neural 真人語音 · {voice_info}")
+        with st.spinner("Neural 語音合成中…"):
+            audio_path = ensure_dialogue_tts(
+                q["audio_text"],
+                accent=accent or "MIX",
+                seed=seed,
+            )
         if audio_path and Path(audio_path).exists():
             st.audio(audio_path)
+        else:
+            st.warning("音檔載入失敗，請稍後再試或展開原文對照。")
         with st.expander("顯示聽力原文（先試著不要看）"):
             st.write(q["audio_text"])
 

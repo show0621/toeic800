@@ -142,6 +142,17 @@ def build_daily_grammar(db: ToeicDatabase, count: int = DAILY_COUNT, day: date |
     return _tag(pool[:count], "grammar")
 
 
+def _plain_text_to_dialogue(text: str) -> str:
+    """將新聞段落拆成 W/M 對話，供雙語音聽力合成。"""
+    sents = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text.strip()) if s.strip()]
+    if len(sents) >= 2:
+        mid = max(1, len(sents) // 2)
+        w_part = " ".join(sents[:mid])
+        m_part = " ".join(sents[mid : mid + 2])
+        return f"W: {w_part} M: {m_part}"
+    return text
+
+
 def build_daily_listening(
     db: ToeicDatabase, count: int = DAILY_COUNT, day: date | None = None
 ) -> list[dict[str, Any]]:
@@ -160,7 +171,7 @@ def build_daily_listening(
             zh = para.get("text_zh") or "經濟相關報導內容"
             pool.append(
                 {
-                    "audio_text": text,
+                    "audio_text": _plain_text_to_dialogue(text),
                     "question": "What topic is primarily discussed in the passage?",
                     "options": [
                         "Economic or financial developments",
