@@ -1,0 +1,1 @@
+# 建立同名檔案 auto-sync.disabled（空檔）即可暫停 Agent 結束時的自動 git push。

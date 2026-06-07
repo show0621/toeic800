@@ -1,0 +1,15 @@
+---
+description: GitHub auto-sync via Cursor stop hook; agent should not manual commit unless user asks for amend/special message
+alwaysApply: true
+---
+
+# GitHub 自動同步
+
+本專案在 **Agent 任務結束** 時會透過 `.cursor/hooks.json` 的 `stop` hook 自動 `git commit` + `git push`（僅在有變更且通過安全過濾時）。
+
+- **不要**在每次改完後重複手動 commit/push，除非使用者要求特定訊息、`--amend` 或只推某分支。
+- 機密檔（`.env`、`.streamlit/secrets.toml`）永不會被加入。
+- 暫停自動同步：在專案根目錄建立空檔 `.cursor/auto-sync.disabled`。
+- 日誌：`.cursor/hooks/auto-sync.log`（已 gitignore）。
+
+使用者說「同步 GitHub」時，可確認 hook 是否執行或查看上述日誌。
