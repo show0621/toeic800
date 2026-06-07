@@ -11,6 +11,7 @@ import streamlit as st
 from toeic800.processing.japanese_vocabulary import ensure_ja_pronunciation
 from toeic800.processing.tts import ACCENT_LABELS, ensure_tts
 from toeic800.ui.vocab_attribution import render_dict_attribution
+from toeic800.ui.ja_dict_attribution import render_ja_dict_attribution
 from toeic800.processing.vocab_selection import filter_active_vocabulary
 
 
@@ -116,7 +117,12 @@ def render_vocab_popover(
     st.write("**中文：**", v.get("meaning_zh") or "—")
     if not japanese:
         st.write("**英文：**", v.get("meaning_en") or "—")
-    render_dict_attribution(v)
+    else:
+        st.write("**羅馬字：**", v.get("meaning_en") or "—")
+    if japanese:
+        render_ja_dict_attribution(v)
+    else:
+        render_dict_attribution(v)
 
     vid = v.get("id")
     lang = "ja" if japanese else "en"
@@ -163,7 +169,9 @@ def render_vocab_popover(
         ):
             with st.spinner("…"):
                 if japanese:
-                    audio = ensure_ja_pronunciation(v["word"])
+                    audio = ensure_ja_pronunciation(
+                        v["word"], reading=v.get("phonetic") or None
+                    )
                 else:
                     audio = ensure_pronunciation(v["word"], accent=accent)
             if audio and Path(str(audio)).exists():

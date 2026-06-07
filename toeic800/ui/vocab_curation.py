@@ -18,13 +18,16 @@ from toeic800.processing.vocab_selection import (
     STUDY_AUTO,
     STUDY_EXCLUDED,
     STUDY_INCLUDED,
+    dedupe_vocabulary_by_word,
     filter_active_vocabulary,
     normalize_study_status,
     vocab_is_active,
 )
 from toeic800.processing.vocabulary import ensure_pronunciation, lookup_word, vocab_dict_fields
 from toeic800.processing.word_levels import is_toeic800_word
+from toeic800.processing.ja_dict_lookup import ja_vocab_dict_fields, lookup_japanese_reading, mazii_search_url, moji_search_url
 from toeic800.ui.vocab_attribution import render_dict_attribution
+from toeic800.ui.ja_dict_attribution import render_ja_dict_attribution
 
 
 def _dict_fields(info: dict[str, Any]) -> dict[str, Any]:
@@ -96,6 +99,7 @@ def render_article_vocab_curation(
             "「恢復自動」→ 依系統 800+ 規則。"
         )
 
+        vocabulary = dedupe_vocabulary_by_word(vocabulary)
         active = filter_active_vocabulary(vocabulary, toeic=toeic)
         c1, c2, c3 = st.columns(3)
         c1.metric("文章單字", len(vocabulary))
@@ -172,7 +176,9 @@ def _render_vocab_row(
             if st.button(f"🔊 產生語音", key=f"vtts_{vid}"):
                 with st.spinner("語音合成中…"):
                     if japanese:
-                        path = ensure_ja_pronunciation(word)
+                        path = ensure_ja_pronunciation(
+                            word, reading=v.get("phonetic") or None
+                        )
                     else:
                         path = ensure_pronunciation(word, accent=accent)
                 if path and Path(path).exists():
@@ -183,7 +189,19 @@ def _render_vocab_row(
                 else:
                     st.warning("無法產生語音")
         with m2:
-            if st.button("📖 查 Cambridge", key=f"vcam_{vid}", disabled=japanese):
+            if japanese:
+                l1, l2, l3 = st.columns(3)
+                l1.link_button("Mazii", v.get("dict_url") or mazii_search_url(word))
+                l2.link_button("MOJi", v.get("moji_url") or moji_search_url(word))
+                if l3.button("更新讀音", key=f"vja_{vid}"):
+                    with st.spinner("查詢讀音…"):
+                        info = lookup_japanese_reading(word)
+                    if info:
+                        _update_vocab(db, vid, **ja_vocab_dict_fields(info))
+                        _invalidate_db_cache()
+                        st.toast("已更新讀音")
+                        st.rerun()
+            elif st.button("📖 查 Cambridge", key=f"vcam_{vid}"):
                 with st.spinner("查詢 Cambridge Dictionary…"):
                     info = lookup_word(word)
                 if info:
@@ -198,7 +216,10 @@ def _render_vocab_row(
             st.markdown(f"**例句：** {v['example_en']}")
             if v.get("example_zh"):
                 st.caption(v["example_zh"])
-            render_dict_attribution(v)
+            if japanese:
+                render_ja_dict_attribution(v)
+            else:
+                render_dict_attribution(v)
             if st.button("🔊 例句朗讀", key=f"vextts_{vid}"):
                 lang = "ja" if japanese else "en"
                 with st.spinner("例句語音…"):

@@ -169,6 +169,10 @@ def render_article_page(db: ToeicDatabase) -> None:
 
     if toeic:
         render_disclaimer(key=f"art_disclaimer_{article['id']}")
+    elif is_japanese():
+        from toeic800.ui.ja_disclaimer import render_ja_disclaimer
+
+        render_ja_disclaimer(key=f"art_ja_disclaimer_{article['id']}")
 
     with st.expander("📝 文章筆記"):
         note = st.text_area("新增筆記", key=f"note_art_{article['id']}")

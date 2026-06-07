@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from toeic800 import config
+from toeic800.processing.ja_dict_lookup import ja_vocab_dict_fields, lookup_japanese_reading
 from toeic800.processing.japanese_translator import translate_ja_to_zh
 
 logger = logging.getLogger(__name__)
@@ -40,25 +41,26 @@ def extract_japanese_vocabulary(
             break
         if len(surface) < 2 and not re.search(r"[\u4e00-\u9fff]", surface):
             continue
-        reading = _to_hiragana(surface)
-        romaji = _to_romaji(reading or surface)
+        dict_info = lookup_japanese_reading(surface) or {}
+        reading = dict_info.get("phonetic") or _to_hiragana(surface)
+        romaji = dict_info.get("meaning_en") or _to_romaji(reading or surface)
         example = _example_sentence(surface, paragraphs)
         meaning_zh = translate_ja_to_zh(surface)
         if example and example != surface:
             meaning_zh = translate_ja_to_zh(example)[:80] or meaning_zh
 
-        results.append(
-            {
-                "word": surface,
-                "pos": POS_MAP.get(pos, pos),
-                "meaning_zh": meaning_zh,
-                "meaning_en": romaji,
-                "phonetic": reading or romaji,
-                "example_en": example,
-                "example_zh": translate_ja_to_zh(example) if example else "",
-                "audio_path": ensure_ja_pronunciation(surface),
-            }
-        )
+        entry = {
+            "word": surface,
+            "pos": POS_MAP.get(pos, pos),
+            "meaning_zh": meaning_zh,
+            "meaning_en": romaji,
+            "phonetic": reading or romaji,
+            "example_en": example,
+            "example_zh": translate_ja_to_zh(example) if example else "",
+            "audio_path": ensure_ja_pronunciation(surface, reading=reading or None),
+        }
+        entry.update(ja_vocab_dict_fields(dict_info))
+        results.append(entry)
     return results
 
 
@@ -139,17 +141,27 @@ def _to_romaji(text: str) -> str:
         return text
 
 
-def ensure_ja_pronunciation(word: str) -> str | None:
+def ensure_ja_pronunciation(word: str, *, reading: str | None = None) -> str | None:
     safe = re.sub(r"[^\w\u3040-\u30ff\u4e00-\u9fff]", "", word)[:40]
     if not safe:
         return None
+    speak = (reading or word).strip()
     dest = config.JA_AUDIO_DIR / f"{safe}.mp3"
-    if dest.exists():
+    if dest.exists() and dest.stat().st_size > 0:
         return str(dest)
+
+    try:
+        from toeic800.processing.tts import ensure_ja_word_tts
+
+        if ensure_ja_word_tts(speak, dest):
+            return str(dest)
+    except Exception as exc:
+        logger.debug("Edge TTS ja 失敗 %s: %s", word, exc)
+
     try:
         from gtts import gTTS
 
-        gTTS(text=word, lang="ja").save(str(dest))
+        gTTS(text=speak, lang="ja").save(str(dest))
         return str(dest)
     except Exception as exc:
         logger.debug("gTTS ja 失敗 %s: %s", word, exc)

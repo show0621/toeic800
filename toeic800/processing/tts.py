@@ -263,6 +263,11 @@ def ensure_word_pronunciation(word: str, accent: str = "US") -> str | None:
     return ensure_tts(word, lang="en", accent=accent, cache_dir=config.AUDIO_DIR / "words" / accent.lower())
 
 
+def ensure_ja_word_tts(text: str, dest: Path) -> bool:
+    """日文單字 TTS（Edge ja-JP）。"""
+    return _edge_tts_save(text.strip(), "ja-JP-NanamiNeural", dest)
+
+
 def _edge_tts_save(text: str, voice: str, dest: Path, *, ssml: bool = False) -> bool:
     try:
         import edge_tts

@@ -22,6 +22,11 @@ TOEIC800_SEED = ADVANCED_SEED
 
 MIN_VOCAB_SCORE = 8.0
 
+_NEWSLIKE_EXAMPLE_RE = re.compile(
+    r"(M&S|Marks and Spencer|BBC|CNN|Reuters|\d{1,3},\s|\blaunches\b|\bsecured a job\b)",
+    re.I,
+)
+
 STOPWORDS = {
     "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for", "of",
     "with", "by", "from", "as", "is", "was", "are", "were", "be", "been", "being",
@@ -43,12 +48,17 @@ def extract_vocabulary(
     full_text = " ".join(paragraphs)
     candidates = _rank_candidates(full_text)
     results: list[dict[str, Any]] = []
+    seen: set[str] = set()
 
     for word, score in candidates:
         if score < MIN_VOCAB_SCORE:
             continue
+        low = word.lower().strip("'")
+        if low in seen:
+            continue
         if len(results) >= limit:
             break
+        seen.add(low)
         info = lookup_word(word)
         if not info:
             continue
@@ -222,6 +232,116 @@ def vocab_dict_fields(info: dict[str, Any]) -> dict[str, Any]:
         )
         if info.get(k) not in (None, "")
     }
+
+
+def is_news_like_example(text: str) -> bool:
+    """例句是否像新聞摘錄（舊資料或誤存）。"""
+    t = (text or "").strip()
+    if not t:
+        return False
+    if len(t) > 120:
+        return True
+    if _NEWSLIKE_EXAMPLE_RE.search(t):
+        return True
+    if t.count(".") >= 2 and re.search(r"\b[A-Z][a-z]+ [A-Z][a-z]+\b", t):
+        return True
+    return False
+
+
+def refresh_vocab_from_cambridge(v: dict[str, Any]) -> dict[str, Any]:
+    """確保釋義／例句來自 Cambridge；必要時改為原創例句。"""
+    out = dict(v)
+    word = (out.get("word") or "").strip()
+    if not word:
+        return out
+
+    example = (out.get("example_en") or "").strip()
+    src = (out.get("dict_source") or "").lower()
+    needs_lookup = (
+        src != "cambridge"
+        or is_news_like_example(example)
+        or not example
+        or not (out.get("meaning_en") or "").strip()
+    )
+    if not needs_lookup:
+        return out
+
+    info = lookup_word(word)
+    if info:
+        out.update(vocab_dict_fields(info))
+
+    example = (out.get("example_en") or "").strip()
+    if not example or is_news_like_example(example):
+        ex = generate_example_sentence(word, out.get("pos"))
+        out["example_en"] = ex
+        out["example_zh"] = generate_example_zh(word) or translate_text(ex)
+
+    if out.get("example_en") and not out.get("example_zh"):
+        out["example_zh"] = translate_text(out["example_en"])
+    return out
+
+
+def prepare_vocab_export_list(
+    vocabulary: list[dict[str, Any]],
+    *,
+    dedupe: bool = True,
+    refresh_cambridge: bool = True,
+) -> list[dict[str, Any]]:
+    from toeic800.processing.vocab_selection import dedupe_vocabulary_by_word
+
+    items = dedupe_vocabulary_by_word(vocabulary) if dedupe else list(vocabulary)
+    if not refresh_cambridge:
+        return items
+    return [refresh_vocab_from_cambridge(v) for v in items]
+
+
+def build_toeic_newspaper_sections(
+    db: Any,
+    *,
+    week_label: str | None,
+    track: str = "toeic",
+) -> list[dict[str, Any]]:
+    """組裝報紙式 PDF：每篇含原文段落 + 該篇首次出現的單字（全書去重）。"""
+    from toeic800.processing.vocab_selection import (
+        filter_active_vocabulary,
+        normalize_vocab_word_key,
+    )
+
+    articles = db.list_articles(week_label=week_label, track=track)
+    global_seen: set[str] = set()
+    sections: list[dict[str, Any]] = []
+
+    for meta in articles:
+        art = db.get_article(meta["id"])
+        if not art:
+            continue
+        active = filter_active_vocabulary(list(art.get("vocabulary") or []), toeic=True)
+        words: list[dict[str, Any]] = []
+        for v in active:
+            key = normalize_vocab_word_key(v.get("word") or "")
+            if not key or key in global_seen:
+                continue
+            global_seen.add(key)
+            row = dict(v)
+            row.setdefault("article_title", art.get("title"))
+            row.setdefault("week_label", art.get("week_label"))
+            row.setdefault("source", art.get("source"))
+            words.append(row)
+        paragraphs = list(art.get("paragraphs") or [])
+        if not paragraphs and not words:
+            continue
+        sections.append(
+            {
+                "title": art.get("title") or "",
+                "title_zh": art.get("title_zh") or "",
+                "source": art.get("source") or "",
+                "week_label": art.get("week_label") or "",
+                "summary_zh": art.get("summary_zh") or "",
+                "paragraphs": paragraphs,
+                "vocabulary": words,
+            }
+        )
+    return sections
 
 
 def ensure_pronunciation(word: str, accent: str = "US") -> str | None:

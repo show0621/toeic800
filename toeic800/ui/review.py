@@ -22,7 +22,7 @@ from toeic800.processing.vocab_quiz import check_ja_answer, check_zh_answer
 
 from toeic800.processing.vocabulary import ensure_pronunciation
 
-from toeic800.processing.vocab_selection import filter_active_vocabulary
+from toeic800.processing.vocab_selection import filter_active_vocabulary, dedupe_vocabulary_by_word
 
 from toeic800.ui.context import is_japanese, jlpt_level, learning_track
 
@@ -58,6 +58,7 @@ def render_review_page(db: ToeicDatabase) -> None:
 
     queue = db.review_queue(limit=limit * 3, track=track, jlpt_level=level)
     queue = filter_active_vocabulary(queue, toeic=toeic)
+    queue = dedupe_vocabulary_by_word(queue)
     queue = queue[:limit]
 
     if not queue:

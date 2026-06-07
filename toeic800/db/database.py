@@ -503,15 +503,17 @@ class ToeicDatabase:
             )
 
     def article_has_vocab_word(self, article_id: int, word: str) -> bool:
+        from toeic800.processing.vocab_selection import normalize_vocab_word_key
+
+        target = normalize_vocab_word_key(word)
+        if not target:
+            return False
         with self.connect() as conn:
-            row = conn.execute(
-                """
-                SELECT 1 FROM vocabulary
-                WHERE article_id = ? AND lower(word) = lower(?)
-                """,
-                (article_id, word),
-            ).fetchone()
-        return row is not None
+            rows = conn.execute(
+                "SELECT word FROM vocabulary WHERE article_id = ?",
+                (article_id,),
+            ).fetchall()
+        return any(normalize_vocab_word_key(r["word"]) == target for r in rows)
 
     def add_vocab_entry(self, article_id: int, entry: dict[str, Any]) -> int:
         with self.connect() as conn:

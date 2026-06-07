@@ -34,6 +34,7 @@ from toeic800.ui.kana_pages import render_kana_page
 from toeic800.ui.notes import render_notes_page
 from toeic800.ui.review import render_review_page
 from toeic800.ui.disclaimer import render_disclaimer, render_disclaimer_footer
+from toeic800.ui.ja_disclaimer import render_ja_disclaimer, render_ja_disclaimer_footer
 from toeic800.ui.theme import hero, inject_theme
 from toeic800.ui.toeic_practice_pages import render_daily_practice_page
 from toeic800.ui.vocabulary_view import render_vocabulary_page
@@ -102,7 +103,10 @@ def main() -> None:
         page = st.radio("導覽", pages, key="nav_page")
 
         st.divider()
-        render_disclaimer(key="sidebar_disclaimer")
+        if is_japanese():
+            render_ja_disclaimer(key="sidebar_disclaimer")
+        else:
+            render_disclaimer(key="sidebar_disclaimer")
 
     if is_japanese():
         hero(
@@ -142,7 +146,10 @@ def main() -> None:
     elif page == "管理":
         _render_admin(db)
 
-    render_disclaimer_footer()
+    if is_japanese():
+        render_ja_disclaimer_footer()
+    else:
+        render_disclaimer_footer()
 
 
 def _ensure_news_bootstrap(db: ToeicDatabase) -> None:

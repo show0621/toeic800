@@ -122,7 +122,7 @@ def render_pdf_page(db: ToeicDatabase) -> None:
     if st.button("產生 PDF", type="primary"):
         try:
             pdf_bytes = build_vocab_pdf(
-                vocab, title="日文新聞單字表", jlpt_level=level
+                vocab, title="日文新聞單字表", jlpt_level=level, style="japanese"
             )
             st.download_button(
                 "下載 PDF",

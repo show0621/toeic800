@@ -101,6 +101,16 @@ CAMBRIDGE_DICT_ENABLED = os.getenv("CAMBRIDGE_DICT_ENABLED", "true").lower() in 
 CAMBRIDGE_REQUEST_GAP_SEC = float(os.getenv("CAMBRIDGE_REQUEST_GAP_SEC", "1.2"))
 CAMBRIDGE_REQUEST_TIMEOUT = int(os.getenv("CAMBRIDGE_REQUEST_TIMEOUT", "15"))
 
+# 日文讀音 — 參考 Mazii / MOJi（附連結；讀音後援 Jisho + pykakasi）
+JA_DICT_JISHO_FALLBACK = os.getenv("JA_DICT_JISHO_FALLBACK", "true").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+JA_DICT_REQUEST_GAP_SEC = float(os.getenv("JA_DICT_REQUEST_GAP_SEC", "0.8"))
+JA_DICT_REQUEST_TIMEOUT = int(os.getenv("JA_DICT_REQUEST_TIMEOUT", "12"))
+JA_DICT_CACHE_HOURS = int(os.getenv("JA_DICT_CACHE_HOURS", "168"))
+
 # 公開資源混入每日擬真練習（Cambridge / Tatoeba / 新聞 DB 等）
 OPEN_RESOURCES_ENABLED = os.getenv("OPEN_RESOURCES_ENABLED", "true").lower() in (
     "1",
