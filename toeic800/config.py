@@ -9,6 +9,14 @@ DATA_DIR = ROOT / "data"
 AUDIO_DIR = DATA_DIR / "audio"
 JA_AUDIO_DIR = DATA_DIR / "audio_ja"
 DB_PATH = Path(os.getenv("TOEIC800_DB", str(DATA_DIR / "toeic800.db")))
+DB_SEED_PATH = Path(os.getenv("TOEIC800_SEED", str(DATA_DIR / "toeic800.seed.db")))
+
+# 首次啟動且 DB 為空時自動抓取新聞（寫入後重開不再抓取）
+AUTO_BOOTSTRAP_NEWS = os.getenv("AUTO_BOOTSTRAP_NEWS", "true").lower() in (
+    "1",
+    "true",
+    "yes",
+)
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 AUDIO_DIR.mkdir(parents=True, exist_ok=True)
@@ -58,7 +66,7 @@ VOCAB_PER_ARTICLE = int(os.getenv("VOCAB_PER_ARTICLE", "15"))
 # 多益 800+ 每日擬真練習
 DAILY_PRACTICE_COUNT = int(os.getenv("DAILY_PRACTICE_COUNT", "20"))
 DAILY_READING_SPLIT = {"single": 8, "double": 7, "triple": 5}
-TOEIC_RAG_CORPUS_VERSION = "v2"
+TOEIC_RAG_CORPUS_VERSION = "v3"
 
 # RSS 來源
 RSS_FEEDS = {

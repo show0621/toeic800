@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import logging
+import shutil
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime
@@ -9,6 +11,8 @@ from pathlib import Path
 from typing import Any, Generator
 
 from toeic800 import config
+
+logger = logging.getLogger(__name__)
 from toeic800.utils.zh_tw import ensure_zh_tw, normalize_article_zh, normalize_vocab_row
 
 SCHEMA_SQL = """
@@ -116,7 +120,17 @@ class ToeicDatabase:
     def __init__(self, path: Path | str | None = None) -> None:
         self.path = Path(path or config.DB_PATH)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._maybe_copy_seed()
         self._init_schema()
+
+    def _maybe_copy_seed(self) -> None:
+        """若主 DB 不存在但 repo 內有 seed，複製後所有人可立即載入。"""
+        if self.path.exists():
+            return
+        seed = config.DB_SEED_PATH
+        if seed.is_file():
+            shutil.copy2(seed, self.path)
+            logger.info("已從 seed 複製資料庫：%s → %s", seed, self.path)
 
     @contextmanager
     def connect(self) -> Generator[sqlite3.Connection, None, None]:

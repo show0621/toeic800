@@ -10,6 +10,7 @@ import streamlit as st
 
 from toeic800.processing.japanese_vocabulary import ensure_ja_pronunciation
 from toeic800.processing.tts import ACCENT_LABELS, ensure_tts
+from toeic800.processing.vocab_examples import enrich_vocab_example
 from toeic800.processing.vocabulary import ensure_pronunciation
 from toeic800.processing.word_levels import filter_advanced_vocab_map
 
@@ -31,7 +32,7 @@ def build_ja_vocab_map(vocabulary: list[dict[str, Any]]) -> dict[str, dict[str, 
 def build_highlight_vocab_map(
     vocabulary: list[dict[str, Any]],
 ) -> dict[str, dict[str, Any]]:
-    """僅保留多益700+ / 托福雅思級生字供黃標。"""
+    """僅保留多益 800–900 進階生字供黃標。"""
     mapped = build_vocab_map(vocabulary)
     # 英文 key 用小寫
     en_map: dict[str, dict[str, Any]] = {}
@@ -58,12 +59,32 @@ def words_in_ja_text(text: str, vocab_map: dict[str, dict[str, Any]]) -> list[st
     return found
 
 
-def highlight_html(text: str, vocab_map: dict[str, dict[str, Any]]) -> str:
-    escaped = html.escape(text)
+def highlight_html(
+    text: str,
+    vocab_map: dict[str, dict[str, Any]],
+    seen: set[str] | None = None,
+) -> tuple[str, set[str]]:
+    """黃標進階單字；同一篇文章每詞僅首次標示。"""
+    seen = set(seen) if seen is not None else set()
+    output = text
     for word in words_in_text(text, vocab_map):
+        key = word.lower()
+        if key in seen:
+            continue
         pattern = re.compile(rf"\b({re.escape(word)})\b", re.I)
-        escaped = pattern.sub(r'<mark class="vocab-hl">\1</mark>', escaped)
-    return escaped
+        match = pattern.search(output)
+        if not match:
+            continue
+        token = match.group(1)
+        output = (
+            output[: match.start()]
+            + f"\0HL\0{token}\0/EHL\0"
+            + output[match.end() :]
+        )
+        seen.add(key)
+    escaped = html.escape(output)
+    escaped = escaped.replace("\0HL\0", '<mark class="vocab-hl">').replace("\0/EHL\0", "</mark>")
+    return escaped, seen
 
 
 def highlight_ja_html(text: str, vocab_map: dict[str, dict[str, Any]]) -> str:
@@ -85,17 +106,20 @@ def render_vocab_popover(
     v: dict[str, Any], *, key_prefix: str, accent: str = "US", japanese: bool = False
 ) -> None:
     """在 popover 內顯示單字詳情。"""
+    if not japanese:
+        v = enrich_vocab_example(v)
     st.markdown(f"**{v['word']}** · {v.get('pos') or ''}")
     st.caption(v.get("phonetic") or v.get("meaning_en") or "")
     st.write("**中文：**", v.get("meaning_zh") or "—")
     if not japanese:
         st.write("**英文：**", v.get("meaning_en") or "—")
     if v.get("example_en"):
-        st.write("**例句：**", v["example_en"])
+        st.write("**例句（原創）：**", v["example_en"])
         st.caption(v.get("example_zh") or "")
         lang = "ja" if japanese else "en"
         ex_audio = ensure_tts(v["example_en"], lang=lang, accent=accent if not japanese else "US")
         if ex_audio and Path(ex_audio).exists():
+            st.caption("例句朗讀 · Neural 真人感語音")
             st.audio(ex_audio)
     audio = v.get("audio_path")
     if japanese:
@@ -104,10 +128,39 @@ def render_vocab_popover(
     else:
         if not audio or not Path(str(audio)).exists():
             audio = ensure_pronunciation(v["word"], accent=accent)
+        else:
+            # 單字發音一律用 Neural TTS，口音可選
+            audio = ensure_pronunciation(v["word"], accent=accent) or audio
     if audio and Path(str(audio)).exists():
-        label = "日語發音" if japanese else f"發音 · {ACCENT_LABELS.get(accent, accent)}"
+        label = "日語發音" if japanese else f"單字發音 · {ACCENT_LABELS.get(accent, accent)}"
         st.caption(label)
         st.audio(audio)
+
+
+def render_article_vocab_chips(
+    vocab_map: dict[str, dict[str, Any]],
+    *,
+    key_prefix: str,
+    accent: str = "US",
+    japanese: bool = False,
+) -> None:
+    """文章底部：每個進階單字只顯示一次 chip。"""
+    if not vocab_map:
+        return
+    hits = sorted(vocab_map.keys(), key=lambda k: vocab_map[k]["word"].lower())
+    st.caption("點選單字查看釋義與原創例句（含朗讀）：")
+    cols = st.columns(min(len(hits), 6) or 1)
+    for i, wkey in enumerate(hits):
+        v = vocab_map[wkey]
+        label = v["word"]
+        with cols[i % len(cols)]:
+            with st.popover(label, use_container_width=True):
+                render_vocab_popover(
+                    v,
+                    key_prefix=f"{key_prefix}_{wkey}",
+                    accent=accent,
+                    japanese=japanese,
+                )
 
 
 def render_paragraph_vocab_chips(

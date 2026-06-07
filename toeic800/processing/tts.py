@@ -150,7 +150,7 @@ def ensure_dialogue_tts(
     seed: int | None = None,
     cache_dir: Path | None = None,
 ) -> str | list[str] | None:
-    """聽力對話：男女不同 Neural 語音。回傳單一 mp3 或分段 mp3 列表。"""
+    """聽力對話：每句依 M/W 用不同 Neural 語音合成，再合併或分段回傳。"""
     text = (text or "").strip()
     if not text:
         return None
@@ -164,34 +164,54 @@ def ensure_dialogue_tts(
         return ensure_tts(turns[0][1], lang="en", accent=ac, cache_dir=cache_dir)
 
     voice_plan = _pick_dialogue_voices(turns, accent=accent, seed=seed)
-    assignments = [
-        (voice, ac, label, line)
-        for (voice, ac, label), (_spk, line) in zip(voice_plan, turns)
-    ]
-    ssml = _build_dialogue_ssml(assignments)
-
-    cache_dir = cache_dir or (config.AUDIO_DIR / "neural" / "dialogue")
+    cache_dir = cache_dir or (config.AUDIO_DIR / "neural" / "dialogue" / "v3")
     cache_dir.mkdir(parents=True, exist_ok=True)
-    key = hashlib.md5(f"{accent}:{seed}:{ssml}".encode()).hexdigest()[:20]
-    dest = cache_dir / f"{key}.mp3"
-    if dest.exists() and dest.stat().st_size > 0:
-        return str(dest)
+    key = hashlib.md5(f"dlg_v3:{accent}:{seed}:{text}".encode()).hexdigest()[:20]
+    merged = cache_dir / f"{key}_full.mp3"
 
-    if _edge_tts_save(ssml, "en-US-JennyNeural", dest):
-        return str(dest)
-
-    # SSML 失敗：分段合成，由 UI 依序播放（避免 MP3 硬拼接失真）
     segments: list[str] = []
     seg_dir = cache_dir / "segments" / key
     seg_dir.mkdir(parents=True, exist_ok=True)
-    for i, (voice, _ac, _label, line) in enumerate(assignments):
-        seg = seg_dir / f"{i}.mp3"
-        if seg.exists() and seg.stat().st_size > 0:
-            segments.append(str(seg))
+
+    for i, ((voice, _ac, _label), (_spk, line)) in enumerate(zip(voice_plan, turns)):
+        line = line.strip()
+        if not line:
             continue
-        if _edge_tts_save(line.strip(), voice, seg):
-            segments.append(str(seg))
-    return segments if segments else None
+        seg = seg_dir / f"{i}.mp3"
+        if not seg.exists() or seg.stat().st_size == 0:
+            if not _edge_tts_save(line, voice, seg):
+                logger.warning("對話片段 TTS 失敗 idx=%s voice=%s", i, voice)
+                continue
+        segments.append(str(seg))
+
+    if not segments:
+        return None
+    if len(segments) == 1:
+        return segments[0]
+    if merged.exists() and merged.stat().st_size > 0:
+        return str(merged)
+    if _merge_dialogue_segments(segments, merged):
+        return str(merged)
+    return segments
+
+
+def _merge_dialogue_segments(paths: list[str], dest: Path, pause_ms: int = 700) -> bool:
+    """嘗試合併為單一 mp3（需 pydub + ffmpeg）。"""
+    try:
+        from pydub import AudioSegment
+
+        combined = AudioSegment.empty()
+        pause = AudioSegment.silent(duration=pause_ms)
+        for i, p in enumerate(paths):
+            combined += AudioSegment.from_mp3(p)
+            if i < len(paths) - 1:
+                combined += pause
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        combined.export(str(dest), format="mp3")
+        return dest.exists() and dest.stat().st_size > 0
+    except Exception as exc:
+        logger.debug("對話合併失敗（將改分段播放）: %s", exc)
+        return False
 
 
 def format_dialogue_script(text: str) -> list[tuple[str, str]]:

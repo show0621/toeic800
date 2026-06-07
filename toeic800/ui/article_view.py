@@ -8,12 +8,13 @@ import streamlit as st
 from toeic800.db.database import ToeicDatabase
 from toeic800.processing.tts import ACCENT_LABELS, ACCENT_VOICES, ensure_tts
 from toeic800.ui.context import is_japanese, jlpt_level, learning_track
+from toeic800.ui.disclaimer import render_disclaimer
 from toeic800.ui.vocab_interactive import (
     build_highlight_vocab_map,
     build_ja_vocab_map,
     highlight_html,
     highlight_ja_html,
-    render_paragraph_vocab_chips,
+    render_article_vocab_chips,
 )
 
 
@@ -108,7 +109,9 @@ def render_article_page(db: ToeicDatabase) -> None:
     if toeic:
         st.markdown("#### 📖 閱讀")
         if highlight_map:
-            st.caption("黃色標示為多益700+ / 托福雅思級生字 · 點下方按鈕查看釋義")
+            st.caption(
+                "黃色標示為多益 800–900 進階生字（常見詞不標；全篇每詞僅首次出現標示）· 文末可點選查看釋義"
+            )
     else:
         st.markdown("#### 📖 日中對照")
         if highlight_map:
@@ -116,20 +119,23 @@ def render_article_page(db: ToeicDatabase) -> None:
                 f"黃色標示為 {article.get('jlpt_level', 'JLPT')} 本課單字 · 點下方按鈕查看釋義與發音"
             )
 
+    seen_hl: set[str] = set()
+    article_vocab: dict[str, dict] = {}
+
     for i, para in enumerate(paragraphs):
         en = para["text_en"]
         if highlight_map:
-            hl = highlight_html(en, highlight_map) if toeic else highlight_ja_html(en, highlight_map)
+            if toeic:
+                before_hl = set(seen_hl)
+                hl, seen_hl = highlight_html(en, highlight_map, seen_hl)
+                for key in seen_hl - before_hl:
+                    if key not in article_vocab and key in highlight_map:
+                        article_vocab[key] = highlight_map[key]
+            else:
+                hl = highlight_ja_html(en, highlight_map)
             st.markdown(
                 f'<div class="en-block">{hl}</div>',
                 unsafe_allow_html=True,
-            )
-            render_paragraph_vocab_chips(
-                en,
-                highlight_map,
-                key_prefix=f"art{article['id']}_p{i}",
-                accent=accent,
-                japanese=not toeic,
             )
         else:
             st.markdown(f'<div class="en-block">{en}</div>', unsafe_allow_html=True)
@@ -140,6 +146,16 @@ def render_article_page(db: ToeicDatabase) -> None:
                 unsafe_allow_html=True,
             )
         st.markdown("")
+
+    if toeic and article_vocab:
+        render_article_vocab_chips(
+            article_vocab,
+            key_prefix=f"art{article['id']}",
+            accent=accent,
+        )
+
+    if toeic:
+        render_disclaimer(key=f"art_disclaimer_{article['id']}")
 
     with st.expander("📝 文章筆記"):
         note = st.text_area("新增筆記", key=f"note_art_{article['id']}")

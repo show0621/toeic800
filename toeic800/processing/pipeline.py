@@ -87,8 +87,16 @@ def process_url(
     return article_id
 
 
-def run_weekly_fetch(db: ToeicDatabase | None = None) -> list[int]:
+def run_weekly_fetch(
+    db: ToeicDatabase | None = None, *, force: bool = False
+) -> list[int]:
     db = db or ToeicDatabase()
+    week = db.week_label()
+    if not force and db.has_weekly_article("toeic", week):
+        articles = db.list_articles(week_label=week, track="toeic")
+        logger.info("本週多益文章已存在（%d 篇），跳過 RSS 抓取", len(articles))
+        return []
+
     candidates = discover_articles(limit=config.WEEKLY_ARTICLE_LIMIT)
     saved: list[int] = []
 

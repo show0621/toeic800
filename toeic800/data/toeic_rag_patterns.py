@@ -123,27 +123,105 @@ _GRAMMAR_PATTERNS: list[dict[str, Any]] = [
 _LISTENING_PATTERNS: list[dict[str, Any]] = [
     {
         "topic": "office_admin",
-        "audio_text": "W: Has the conference room been booked for Monday's client meeting? M: Yes, but we may need a larger room if all ten attendees confirm.",
-        "question": "What concern does the man mention?",
-        "options": ["The room size may be insufficient", "The meeting was cancelled", "The client declined to attend", "The booking fee was too high"],
-        "answer": "The room size may be insufficient",
-        "explanation_zh": "may need a larger room。",
+        "audio_text": (
+            "W: Has the conference room been booked for Monday's client meeting? "
+            "M: Yes, but we may need a larger room if all ten attendees confirm. "
+            "W: I'll call the venue and see whether we can upgrade at no extra charge."
+        ),
+        "question": "What will the woman do next?",
+        "options": [
+            "Inquire about a bigger room",
+            "Cancel the client meeting",
+            "Order catering for ten people",
+            "Reschedule the event to Friday",
+        ],
+        "answer": "Inquire about a bigger room",
+        "explanation_zh": "see whether we can upgrade（詢問能否換大房）。",
     },
     {
         "topic": "hr_personnel",
-        "audio_text": "M: When does the new employee orientation begin? W: It starts at nine, and HR will distribute the handbooks beforehand.",
-        "question": "What will HR provide?",
-        "options": ["Handbooks for new staff", "Travel reimbursement forms", "Updated salary schedules", "Parking permits"],
+        "audio_text": (
+            "M: When does the new employee orientation begin? "
+            "W: It starts at nine, and HR will distribute the handbooks beforehand. "
+            "M: Could you also remind supervisors to attend the afternoon Q&A session?"
+        ),
+        "question": "What will HR provide before orientation?",
+        "options": [
+            "Handbooks for new staff",
+            "Travel reimbursement forms",
+            "Updated salary schedules",
+            "Parking permits",
+        ],
         "answer": "Handbooks for new staff",
-        "explanation_zh": "distribute the handbooks。",
+        "explanation_zh": "distribute the handbooks beforehand。",
     },
     {
         "topic": "travel_hospitality",
-        "audio_text": "W: Our flight has been delayed two hours due to weather. M: Then we'd better notify the hotel about our late check-in.",
+        "audio_text": (
+            "W: Our flight has been delayed two hours because of weather. "
+            "M: Then we'd better notify the hotel about our late check-in. "
+            "W: I already asked the concierge to hold our rooms until midnight."
+        ),
+        "question": "What has the woman already arranged?",
+        "options": [
+            "Late check-in with the hotel",
+            "A refund from the airline",
+            "Tickets on an earlier flight",
+            "A rental car at the airport",
+        ],
+        "answer": "Late check-in with the hotel",
+        "explanation_zh": "hold our rooms until midnight。",
+    },
+    {
+        "topic": "finance_banking",
+        "audio_text": (
+            "M: The auditor needs supporting documents for every transaction above ten thousand. "
+            "W: I'll pull the invoices from the shared drive and upload them tonight. "
+            "M: Please flag any entries that still lack vendor approval."
+        ),
+        "question": "What does the woman agree to do?",
+        "options": [
+            "Provide documentation for the audit",
+            "Approve all vendor contracts",
+            "Close the shared drive permanently",
+            "Postpone the audit until next year",
+        ],
+        "answer": "Provide documentation for the audit",
+        "explanation_zh": "pull the invoices and upload them。",
+    },
+    {
+        "topic": "sales_marketing",
+        "audio_text": (
+            "W: Did the focus group prefer the new packaging design? "
+            "M: Most participants found it appealing, but some wanted clearer labeling. "
+            "W: Let's revise the label text before we send the files to the printer."
+        ),
         "question": "What will the speakers probably do next?",
-        "options": ["Contact the hotel", "Cancel their reservation", "Book a different flight", "Request a refund"],
-        "answer": "Contact the hotel",
-        "explanation_zh": "notify the hotel about late check-in。",
+        "options": [
+            "Adjust the product labels",
+            "Cancel the packaging launch",
+            "Hire a new focus group",
+            "Reduce the product price",
+        ],
+        "answer": "Adjust the product labels",
+        "explanation_zh": "revise the label text before printing。",
+    },
+    {
+        "topic": "manufacturing",
+        "audio_text": (
+            "M: The assembly line stopped because of a sensor malfunction. "
+            "W: Maintenance is on the way; production should resume within the hour. "
+            "M: Good. Notify the shipping team in case today's orders slip to tomorrow."
+        ),
+        "question": "What does the man ask the woman to consider?",
+        "options": [
+            "Possible shipping delays",
+            "Purchasing new sensors abroad",
+            "Closing the plant permanently",
+            "Hiring temporary workers",
+        ],
+        "answer": "Possible shipping delays",
+        "explanation_zh": "orders slip to tomorrow → 出貨可能延誤。",
     },
 ]
 

@@ -14,6 +14,7 @@ import re
 from datetime import date
 from typing import Any
 
+from toeic800 import config
 from toeic800.data.toeic800_bank import (
     GRAMMAR_BANK,
     LISTENING_BANK,
@@ -28,12 +29,13 @@ from toeic800.data.toeic800_bank_ext import (
 )
 from toeic800.data.toeic_format_spec import PART5_GRAMMAR_TYPES, TOEIC_TOPICS_800
 from toeic800.data.toeic_rag_patterns import expand_pattern_pool
+from toeic800.processing.listening_validator import filter_listening_pool
 from toeic800.processing.toeic_explanations import enrich_question
 
 DAILY_COUNT = 20
 READING_SPLIT = {"single": 8, "double": 7, "triple": 5}
 
-_CORPUS_VERSION = "toeic_rag_v2"
+_CORPUS_VERSION = config.TOEIC_RAG_CORPUS_VERSION
 
 
 def _daily_rng(skill: str, day: date | None = None) -> random.Random:
@@ -54,6 +56,18 @@ def _normalize(q: dict[str, Any], skill: str) -> dict[str, Any]:
     return enrich_question(item, skill)
 
 
+def _dedupe_pool(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[str] = set()
+    pool: list[dict[str, Any]] = []
+    for q in items:
+        key = (q.get("audio_text") or q.get("question", "")) + "|" + q.get("answer", "")
+        if key in seen:
+            continue
+        seen.add(key)
+        pool.append(q)
+    return pool
+
+
 def _full_corpus(skill: str) -> list[dict[str, Any]]:
     """RAG 檢索池：核心題庫 + 擴充題庫 + 模式展開題。"""
     if skill == "vocab":
@@ -65,6 +79,8 @@ def _full_corpus(skill: str) -> list[dict[str, Any]]:
     elif skill == "listening":
         base = [dict(q) for q in LISTENING_BANK + LISTENING_EXT]
         expanded = expand_pattern_pool("listening")
+        raw = base + expanded
+        return filter_listening_pool(_dedupe_pool(raw))
     elif skill == "reading":
         base = [dict(q) for q in READING_BANK + READING_EXT]
         expanded = expand_pattern_pool("reading")
@@ -73,7 +89,7 @@ def _full_corpus(skill: str) -> list[dict[str, Any]]:
 
     seen: set[str] = set()
     pool: list[dict[str, Any]] = []
-    for q in base + expanded:
+    for q in _dedupe_pool(base + expanded):
         key = q.get("question", "") + "|" + q.get("answer", "")
         if key in seen:
             continue
@@ -163,8 +179,9 @@ def build_daily_grammar(_db: Any, count: int = DAILY_COUNT, day: date | None = N
 def build_daily_listening(_db: Any, count: int = DAILY_COUNT, day: date | None = None) -> list[dict[str, Any]]:
     rng = _daily_rng("listening", day)
     pool = _full_corpus("listening")
-    rng.shuffle(pool)
-    return [_normalize(q, "listening") for q in pool[:count]]
+    picked = _stratified_pick(pool, count, rng)
+    rng.shuffle(picked)
+    return [_normalize(q, "listening") for q in picked[:count]]
 
 
 def build_daily_reading(_db: Any, count: int = DAILY_COUNT, day: date | None = None) -> list[dict[str, Any]]:

@@ -18,6 +18,11 @@ def render_home(db: ToeicDatabase) -> None:
     c3.metric("單字", stats["vocabulary"])
     c4.metric("筆記", stats["notes"])
 
+    if stats["articles"] > 0:
+        st.caption(
+            f"📦 資料來自本地資料庫（{stats['articles']} 篇）· 重開直接載入，無需重新抓取"
+        )
+
     if not is_japanese():
         st.markdown("---")
         if st.button("🎯 開始今日擬真練習（聽力·文法·單字·閱讀 各20題）", type="primary"):
@@ -26,7 +31,11 @@ def render_home(db: ToeicDatabase) -> None:
 
     weeks = db.list_weeks(track=track, jlpt_level=level)
     if not weeks:
-        hint = "請至「管理」執行每週抓取。" if is_japanese() else "請執行「每週抓取」或匯入示範文章。"
+        hint = (
+            "首次啟動會自動抓取並寫入資料庫；亦可至「管理」手動抓取。"
+            if is_japanese()
+            else "首次啟動會自動抓取並寫入資料庫；亦可至「管理」手動抓取或匯入示範文章。"
+        )
         st.info(f"尚無資料。{hint}")
         if is_japanese():
             st.markdown(

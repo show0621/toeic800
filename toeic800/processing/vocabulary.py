@@ -10,12 +10,16 @@ import requests
 
 from toeic800 import config
 from toeic800.processing.translator import translate_text
-from toeic800.processing.word_levels import ADVANCED_SEED, is_advanced_word, score_word
+from toeic800.processing.vocab_examples import enrich_vocab_example, generate_example_sentence, generate_example_zh
+from toeic800.processing.vocab_glossary import apply_glossary
+from toeic800.processing.word_levels import ADVANCED_SEED, is_toeic800_word, score_word
 
 logger = logging.getLogger(__name__)
 
 # 保留舊名稱供外部引用
 TOEIC800_SEED = ADVANCED_SEED
+
+MIN_VOCAB_SCORE = 8.0
 
 STOPWORDS = {
     "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for", "of",
@@ -40,14 +44,16 @@ def extract_vocabulary(
     results: list[dict[str, Any]] = []
 
     for word, score in candidates:
+        if score < MIN_VOCAB_SCORE:
+            continue
         if len(results) >= limit:
             break
         info = lookup_word(word)
         if not info:
             continue
-        example = _example_sentence(word, paragraphs)
-        example_zh = translate_text(example) if example else ""
-        results.append(
+        example = generate_example_sentence(word, info.get("pos"))
+        example_zh = generate_example_zh(word) or translate_text(example)
+        entry = enrich_vocab_example(
             {
                 "word": word,
                 "pos": info.get("pos"),
@@ -59,6 +65,7 @@ def extract_vocabulary(
                 "audio_path": info.get("audio_path"),
             }
         )
+        results.append(entry)
     return results
 
 
@@ -67,7 +74,7 @@ def _rank_candidates(text: str) -> list[tuple[str, float]]:
     freq: dict[str, int] = {}
     for w in words:
         low = w.lower().strip("'")
-        if len(low) < 5 or low in STOPWORDS or not is_advanced_word(low):
+        if len(low) < 8 or low in STOPWORDS or not is_toeic800_word(low):
             continue
         freq[low] = freq.get(low, 0) + 1
 
@@ -81,15 +88,8 @@ def _rank_candidates(text: str) -> list[tuple[str, float]]:
 
 
 def _example_sentence(word: str, paragraphs: list[str]) -> str:
-    pattern = re.compile(rf"\b{re.escape(word)}\b", re.I)
-    for para in paragraphs:
-        if pattern.search(para):
-            sents = re.split(r"(?<=[.!?])\s+", para)
-            for s in sents:
-                if pattern.search(s):
-                    return s.strip()
-            return para.strip()[:200]
-    return ""
+    """已棄用：例句改為原創生成，保留供相容。"""
+    return generate_example_sentence(word)
 
 
 def lookup_word(word: str) -> dict[str, Any] | None:
@@ -115,20 +115,45 @@ def lookup_word(word: str) -> dict[str, Any] | None:
 
     meanings = data.get("meanings") or []
     pos = meanings[0].get("partOfSpeech") if meanings else None
-    defs = []
-    for m in meanings[:2]:
-        for d in (m.get("definitions") or [])[:2]:
-            if d.get("definition"):
-                defs.append(d["definition"])
-    meaning_en = "; ".join(defs[:2]) if defs else word
+    meaning_en = _pick_meaning_en(meanings) or word
 
-    return {
-        "pos": _pos_zh(pos),
-        "phonetic": phonetic,
-        "meaning_en": meaning_en,
-        "meaning_zh": "",
-        "audio_path": audio_path,
-    }
+    info = apply_glossary(
+        word,
+        {
+            "pos": _pos_zh(pos),
+            "phonetic": phonetic,
+            "meaning_en": meaning_en,
+            "meaning_zh": "",
+            "audio_path": audio_path,
+        },
+    )
+    if not info.get("meaning_zh") and info.get("meaning_en"):
+        info["meaning_zh"] = translate_text(info["meaning_en"])
+    return info
+
+
+def _pick_meaning_en(meanings: list[dict[str, Any]]) -> str:
+    """偏好較完整、較正式的释义，避免過於簡單的第一義。"""
+    candidates: list[tuple[int, str]] = []
+    for m in meanings[:3]:
+        for d in (m.get("definitions") or [])[:3]:
+            defn = (d.get("definition") or "").strip()
+            if len(defn) < 8:
+                continue
+            score = len(defn)
+            if any(ch in defn for ch in (";", "—", "especially", "business", "formal")):
+                score += 10
+            candidates.append((score, defn))
+    if not candidates:
+        for m in meanings[:2]:
+            for d in (m.get("definitions") or [])[:2]:
+                defn = (d.get("definition") or "").strip()
+                if defn:
+                    candidates.append((len(defn), defn))
+    if not candidates:
+        return ""
+    candidates.sort(key=lambda x: -x[0])
+    return "; ".join(dict.fromkeys(c[1] for c in candidates[:2]))
 
 
 def _pos_zh(pos: str | None) -> str:

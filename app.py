@@ -16,6 +16,10 @@ from toeic800.processing.japanese_pipeline import (
     process_japanese_url,
     run_japanese_weekly_fetch,
 )
+from toeic800.processing.content_bootstrap import (
+    bootstrap_news_if_needed,
+    needs_bootstrap,
+)
 from toeic800.processing.pipeline import process_url, run_weekly_fetch
 from toeic800.ui.article_view import render_article_page
 from toeic800.ui.context import is_japanese
@@ -29,6 +33,7 @@ from toeic800.ui.japanese_pages import (
 from toeic800.ui.kana_pages import render_kana_page
 from toeic800.ui.notes import render_notes_page
 from toeic800.ui.review import render_review_page
+from toeic800.ui.disclaimer import render_disclaimer, render_disclaimer_footer
 from toeic800.ui.theme import hero, inject_theme
 from toeic800.ui.toeic_practice_pages import render_daily_practice_page
 from toeic800.ui.vocabulary_view import render_vocabulary_page
@@ -49,6 +54,7 @@ def get_db() -> ToeicDatabase:
 
 def main() -> None:
     db = get_db()
+    _ensure_news_bootstrap(db)
 
     # 首頁「閱讀」等需在 radio 渲染前寫入 nav_page
     if st.session_state.get("nav_page_pending"):
@@ -93,6 +99,9 @@ def main() -> None:
 
         page = st.radio("導覽", pages, key="nav_page")
 
+        st.divider()
+        render_disclaimer(key="sidebar_disclaimer")
+
     if is_japanese():
         hero(
             f"日文新聞學習 · {st.session_state.get('jlpt_level', 'N5')}",
@@ -131,9 +140,32 @@ def main() -> None:
     elif page == "管理":
         _render_admin(db)
 
+    render_disclaimer_footer()
+
+
+def _ensure_news_bootstrap(db: ToeicDatabase) -> None:
+    if st.session_state.get("_news_bootstrap_done"):
+        return
+    if needs_bootstrap(db):
+        with st.spinner("首次啟動：抓取新聞並寫入資料庫（僅需一次，之後從 DB 快速載入）…"):
+            result = bootstrap_news_if_needed(db)
+    else:
+        result = bootstrap_news_if_needed(db)
+    st.session_state["_news_bootstrap_done"] = True
+    if not result.skipped and (result.toeic_added or result.japanese_added):
+        st.toast(
+            f"已寫入資料庫：多益 {result.toeic_added} 篇 · 日文 {result.japanese_added} 篇"
+        )
+
 
 def _render_admin(db: ToeicDatabase) -> None:
     st.markdown("### 資料管理")
+    st.caption(
+        f"資料庫：`{db.path}` · "
+        f"多益 {db.stats(track='toeic')['articles']} 篇 · "
+        f"日文 {db.stats(track='japanese')['articles']} 篇 · "
+        "重開從 DB 載入，僅「本週抓取」會連線 RSS"
+    )
     if is_japanese():
         level = st.session_state.get("jlpt_level", "N5")
         if st.button("🔄 本週日文抓取（N5–N1 各 1 篇）", type="primary"):
@@ -163,7 +195,7 @@ def _render_admin(db: ToeicDatabase) -> None:
         with c1:
             if st.button("🔄 執行本週抓取", type="primary"):
                 with st.spinner("抓取 BBC / CNN 中…"):
-                    ids = run_weekly_fetch(db)
+                    ids = run_weekly_fetch(db, force=True)
                 st.success(f"新增 {len(ids)} 篇")
                 st.cache_resource.clear()
                 st.rerun()
@@ -192,7 +224,7 @@ def _render_admin(db: ToeicDatabase) -> None:
     st.markdown("---")
     if st.button("🔄 全部每週抓取（多益 + 日文 N5–N1）"):
         with st.spinner("執行中…"):
-            toeic_ids = run_weekly_fetch(db)
+            toeic_ids = run_weekly_fetch(db, force=True)
             ja_saved = run_japanese_weekly_fetch(db)
         st.success(f"多益 {len(toeic_ids)} 篇 · 日文 {ja_saved}")
         st.cache_resource.clear()

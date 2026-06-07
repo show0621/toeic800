@@ -5,16 +5,21 @@ import json
 from datetime import date
 from pathlib import Path
 
+import base64
+
+import streamlit.components.v1 as components
+
 import streamlit as st
 
+from toeic800 import config
 from toeic800.db.database import ToeicDatabase
 from toeic800.processing.toeic_practice import DAILY_COUNT, build_daily_set, corpus_stats
+from toeic800.ui.disclaimer import render_disclaimer
 from toeic800.processing.tts import (
     ACCENT_LABELS,
     dialogue_voice_summary,
     ensure_dialogue_tts,
     format_dialogue_script,
-    parse_dialogue,
 )
 
 
@@ -54,9 +59,12 @@ def render_daily_practice_page(db: ToeicDatabase) -> None:
     with tab_read:
         _render_reading_tab(db)
 
+    render_disclaimer(key="toeic_practice_disclaimer")
+
 
 def _session_keys(skill: str) -> tuple[str, str, str, str]:
-    prefix = f"toeic_{skill}_{date.today().isoformat()}"
+    ver = config.TOEIC_RAG_CORPUS_VERSION
+    prefix = f"toeic_{skill}_{date.today().isoformat()}_{ver}"
     return (
         f"{prefix}_idx",
         f"{prefix}_score",
@@ -112,16 +120,18 @@ def _render_submit_result(q: dict, choice: str, *, show_only: bool = False) -> N
 def _render_listening_audio(q: dict, idx: int, accent: str | None) -> None:
     if not q.get("audio_text"):
         return
-    turns = parse_dialogue(q["audio_text"])
-    is_dialogue = len(turns) >= 2 or (len(turns) == 1 and turns[0][0] in ("W", "M"))
-    st.markdown("#### Part 3 · 簡短對話" if is_dialogue else "#### Part 4 · 簡短獨白")
+
+    st.markdown("#### Part 3 · 雙人對話（原創擬真，非 BBC 新聞）")
+    st.caption(
+        "請先聽完 **男女對話**，再回答下方題目。音檔內容是對話本身，不會朗讀題幹文字。"
+    )
 
     seed = hash(f"{date.today().isoformat()}:{q.get('qid', idx)}:{q['audio_text']}") & 0xFFFFFFFF
-    cache_key = f"listen_audio_{seed}_{accent}"
+    cache_key = f"listen_audio_v3_{seed}_{accent}"
     voice_info = dialogue_voice_summary(q["audio_text"], accent=accent or "US", seed=seed)
 
     if cache_key not in st.session_state:
-        with st.spinner("Neural 語音合成中…"):
+        with st.spinner("Neural 語音合成中（男/女聲）…"):
             st.session_state[cache_key] = ensure_dialogue_tts(
                 q["audio_text"],
                 accent=accent or "US",
@@ -129,28 +139,82 @@ def _render_listening_audio(q: dict, idx: int, accent: str | None) -> None:
             )
 
     audio_result = st.session_state[cache_key]
-    st.caption(f"🔊 請先聽音檔再作答 · {voice_info}")
+    script = format_dialogue_script(q["audio_text"])
+    st.caption(f"🔊 {voice_info}")
 
+    segments: list[str] = []
     if isinstance(audio_result, list):
-        script = format_dialogue_script(q["audio_text"])
-        for i, seg in enumerate(audio_result):
-            if seg and Path(seg).exists():
-                role = script[i][0] if i < len(script) else f"片段 {i + 1}"
-                st.caption(f"{'👩' if role == '女' else '👨'} {role}聲")
-                st.audio(seg)
+        segments = [s for s in audio_result if s and Path(s).exists()]
     elif audio_result and Path(str(audio_result)).exists():
         st.audio(str(audio_result))
-    else:
-        st.warning("音檔載入失敗，請稍後再試。")
+        segments = []
+
+    if segments:
+        _render_sequential_dialogue_player(segments, script)
+        with st.expander("分段播放（男/女聲各段）"):
+            for i, seg in enumerate(segments):
+                role = script[i][0] if i < len(script) else f"片段 {i + 1}"
+                icon = "👩" if role == "女" else "👨"
+                st.caption(f"{icon} {role}聲")
+                st.audio(seg)
+    elif not (audio_result and Path(str(audio_result)).exists()):
+        st.warning("音檔載入失敗，請按「重新作答今日聽力」或重新整理頁面。")
 
     with st.expander("顯示聽力原文（建議先聽再開）"):
-        script = format_dialogue_script(q["audio_text"])
-        if script and script[0][0] != "旁白":
-            for role, line in script:
-                icon = "👩" if role == "女" else "👨"
-                st.markdown(f"**{icon} {role}：** {line}")
-        else:
-            st.write(q["audio_text"])
+        for role, line in script:
+            icon = "👩" if role == "女" else "👨" if role == "男" else "📢"
+            st.markdown(f"**{icon} {role}：** {line}")
+
+
+def _render_sequential_dialogue_player(
+    segments: list[str], script: list[tuple[str, str]]
+) -> None:
+    """一鍵依序播放完整對話（男/女聲交替）。"""
+    clips: list[str] = []
+    for seg in segments:
+        try:
+            clips.append(base64.b64encode(Path(seg).read_bytes()).decode("ascii"))
+        except OSError:
+            continue
+    if len(clips) < 2:
+        if clips:
+            st.audio(segments[0])
+        return
+
+    roles = [script[i][0] if i < len(script) else "?" for i in range(len(clips))]
+    roles_js = ",".join(f'"{r}"' for r in roles)
+    src_js = ",".join(f'"data:audio/mpeg;base64,{c}"' for c in clips)
+    html = f"""
+    <div style="font-family:sans-serif;">
+      <button onclick="playAll()" style="padding:8px 14px;border-radius:8px;border:none;
+        background:#1e3a5f;color:#fff;cursor:pointer;margin-bottom:6px;">
+        ▶ 播放完整對話
+      </button>
+      <div id="dlg-status" style="font-size:13px;color:#64748b;">點擊播放男/女聲完整對話</div>
+    </div>
+    <script>
+    const srcs = [{src_js}];
+    const roles = [{roles_js}];
+    let idx = 0;
+    const audio = new Audio();
+    function playAll() {{
+      idx = 0;
+      playNext();
+    }}
+    function playNext() {{
+      if (idx >= srcs.length) {{
+        document.getElementById('dlg-status').innerText = '播放完畢';
+        return;
+      }}
+      document.getElementById('dlg-status').innerText =
+        '片段 ' + (idx + 1) + '/' + srcs.length + '（' + roles[idx] + '聲）';
+      audio.src = srcs[idx];
+      audio.onended = function() {{ idx++; setTimeout(playNext, 650); }};
+      audio.play();
+    }}
+    </script>
+    """
+    components.html(html, height=90)
 
 
 def _render_skill_tab(
@@ -198,6 +262,8 @@ def _render_skill_tab(
 
     if skill == "listening":
         _render_listening_audio(q, idx, accent)
+        st.markdown("---")
+        st.markdown("**聽力問題（依對話內容作答）：**")
 
     st.markdown(f"**{q['question']}**")
     choice = st.radio("選擇答案", options, key=f"toeic_{skill}_q_{idx}")
